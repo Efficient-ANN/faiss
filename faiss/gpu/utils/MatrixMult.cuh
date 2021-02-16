@@ -34,6 +34,16 @@ runMatrixMult(Tensor<float, 2, true>& c, bool transC,
 /// where `i` is the outermost dimension, via iterated gemm
 /// Expects row major layout, not fortran/blas column major!
 template <typename AT, typename BT>
+void runIteratedMatrixMult(Tensor<float, 3, true> &c, bool transC,
+                           Tensor<AT, 3, true> &a, bool transA,
+                           Tensor<BT, 3, true> &b, bool transB, float alpha,
+                           float beta, cublasHandle_t handle,
+                           cudaStream_t stream);
+
+/// C_i = alpha * A_i * B_i + beta * C_i
+/// where `i` is the outermost dimension, via iterated gemm
+/// Expects row major layout, not fortran/blas column major!
+template <typename AT, typename BT>
 void runIteratedMatrixMult(Tensor<float, 3, true>& c, bool transC,
                            Tensor<AT, 3, true>& a, bool transA,
                            Tensor<BT, 3, true>& b, bool transB,

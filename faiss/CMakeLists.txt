@@ -65,6 +65,7 @@ add_library(faiss
   utils/quantize_lut.cpp
   utils/random.cpp
   utils/utils.cpp
+  utils/vecs_storage.cpp
 )
 
 set(FAISS_HEADERS

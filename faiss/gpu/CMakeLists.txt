@@ -12,10 +12,13 @@ target_sources(faiss PRIVATE
   GpuIndex.cu
   GpuIndexBinaryFlat.cu
   GpuIndexFlat.cu
+  GpuIndexIMI.cu
+  GpuIndexIMIPQ.cu
   GpuIndexIVF.cu
   GpuIndexIVFFlat.cu
   GpuIndexIVFPQ.cu
   GpuIndexIVFScalarQuantizer.cu
+  GpuMultiIndex2.cu
   GpuResources.cpp
   StandardGpuResources.cpp
   impl/BinaryDistance.cu
@@ -23,6 +26,9 @@ target_sources(faiss PRIVATE
   impl/BroadcastSum.cu
   impl/Distance.cu
   impl/FlatIndex.cu
+  impl/IMIAppend.cu
+  impl/IMIBase.cu
+  impl/IMIPQ.cu
   impl/IVFAppend.cu
   impl/IVFBase.cu
   impl/IVFFlat.cu
@@ -35,6 +41,7 @@ target_sources(faiss PRIVATE
   impl/InterleavedCodes.cpp
   impl/L2Norm.cu
   impl/L2Select.cu
+  impl/MultiIndex2.cu
   impl/PQScanMultiPassPrecomputed.cu
   impl/RemapIndices.cpp
   impl/VectorResidual.cu
@@ -49,6 +56,7 @@ target_sources(faiss PRIVATE
   utils/BlockSelectFloat.cu
   utils/BlockSelectHalf.cu
   utils/DeviceUtils.cu
+  utils/MultiSequence.cu
   utils/StackDeviceMemory.cpp
   utils/Timer.cpp
   utils/WarpSelectFloat.cu

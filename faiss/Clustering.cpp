@@ -528,4 +528,15 @@ float kmeans_clustering (size_t d, size_t n, size_t k,
     return clus.iteration_stats.back().obj;
 }
 
+float kmeans_clustering(size_t d, size_t n, size_t k, const float *x,
+                        float *centroids, bool verbose)
+{
+  Clustering clus(d, k);
+  clus.verbose = verbose;
+  IndexFlatL2 index(d);
+  clus.train(n, x, index);
+  memcpy(centroids, clus.centroids.data(), sizeof(*centroids) * d * k);
+  return clus.iteration_stats.back().obj;
+}
+
 } // namespace faiss

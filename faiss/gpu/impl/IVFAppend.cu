@@ -645,4 +645,62 @@ runIVFPQInterleavedAppend(Tensor<int, 1, true>& listIds,
   CUDA_TEST_ERROR();
 }
 
+void
+runIVFPQInterleavedAppend(Tensor<int, 1, true>& uniqueLists,
+                          Tensor<int, 1, true>& vectorsByUniqueList,
+                          Tensor<int, 1, true>& uniqueListVectorStart,
+                          Tensor<int, 1, true>& uniqueListStartOffset,
+                          int bitsPerCode,
+                          Tensor<uint8_t, 2, true>& encodings,
+                          thrust::device_vector<void*>& listCodes,
+                          cudaStream_t stream) {
+  // limitation for now
+  FAISS_ASSERT(bitsPerCode <= 8);
+
+#define RUN_APPEND(ENCODE_T, ENCODE_BITS)                               \
+  do {                                                                  \
+    dim3 grid(uniqueLists.getSize(0));                                  \
+    dim3 block(128);                                                    \
+                                                                        \
+    ivfInterleavedAppend<ENCODE_T, ENCODE_BITS>                         \
+      <<<grid, block, 0, stream>>>(                                     \
+        uniqueLists,                                                    \
+        uniqueListVectorStart,                                          \
+        vectorsByUniqueList,                                            \
+        uniqueListStartOffset,                                          \
+        encodings,                                                      \
+        listCodes.data().get());                                        \
+  } while (0)
+
+  switch (bitsPerCode) {
+    case 4:
+    {
+      RUN_APPEND(uint8_t, 4);
+      break;
+    }
+    case 5:
+    {
+      RUN_APPEND(uint8_t, 5);
+      break;
+    }
+    case 6:
+    {
+      RUN_APPEND(uint8_t, 6);
+      break;
+    }
+    case 8:
+    {
+      RUN_APPEND(uint8_t, 8);
+      break;
+    }
+    default:
+      // unhandled
+      FAISS_ASSERT(false);
+      break;
+  }
+
+#undef RUN_APPEND
+  CUDA_TEST_ERROR();
+}
+
 } } // namespace

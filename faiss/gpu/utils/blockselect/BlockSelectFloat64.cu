@@ -11,5 +11,7 @@ namespace faiss { namespace gpu {
 
 BLOCK_SELECT_IMPL(float, true, 64, 3);
 BLOCK_SELECT_IMPL(float, false, 64, 3);
+BLOCK_SELECT_IMPL_INDEX(float, true, 64, 3, ushort);
+BLOCK_SELECT_IMPL_INDEX(float, false, 64, 3, ushort);
 
 } } // namespace

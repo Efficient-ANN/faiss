@@ -1,0 +1,846 @@
+/**
+ * Copyright (c) Facebook, Inc. and its affiliates.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#include <cstdio>
+#include <faiss/Clustering.h>
+#include <faiss/MetricType.h>
+#include <faiss/gpu/GpuMultiIndex2.h>
+#include <faiss/gpu/impl/MultiIndex2.cuh>
+#include <faiss/gpu/utils/CopyUtils.cuh>
+#include <faiss/gpu/utils/DeviceTensor.cuh>
+#include <faiss/gpu/utils/DeviceUtils.h>
+#include <faiss/gpu/utils/StaticUtils.h>
+#include <faiss/impl/FaissAssert.h>
+#include <faiss/impl/FaissException.h>
+#include <faiss/utils/utils.h>
+#include <limits>
+#include <memory>
+#include <vector>
+
+namespace faiss {
+namespace gpu {
+
+/// Size above which we page copies from the CPU to GPU (non-paged
+/// memory usage)
+constexpr size_t kNonPinnedPageSize = (size_t)256 * 1024 * 1024;
+
+const int GpuMultiIndex2::NUM_CODEBOOKS = 2;
+
+GpuMultiIndex2::GpuMultiIndex2(GpuResourcesProvider *provider, int dims,
+                               int numVecsPerCodebook_,
+                               GpuMultiIndex2Config config)
+    : GpuIndex(provider->getResources(), dims, faiss::MetricType::METRIC_L2, 0,
+               config),
+      numVecsPerCodebook_(numVecsPerCodebook_),
+      subDim_(dims / GpuMultiIndex2::NUM_CODEBOOKS), config_(config) {
+  FAISS_ASSERT(dims % GpuMultiIndex2::NUM_CODEBOOKS == 0);
+  this->is_trained = false;
+  DeviceScope scope(config_.device);
+  data_.reset(new MultiIndex2(resources_.get(), dims, config_.memorySpace));
+}
+
+GpuMultiIndex2::GpuMultiIndex2(std::shared_ptr<GpuResources> resources,
+                               int dims, int numVecsPerCodebook_,
+                               GpuMultiIndex2Config config)
+    : GpuIndex(resources, dims, faiss::MetricType::METRIC_L2, 0, config),
+      numVecsPerCodebook_(numVecsPerCodebook_),
+      subDim_(dims / GpuMultiIndex2::NUM_CODEBOOKS), config_(config) {
+  FAISS_ASSERT(dims % GpuMultiIndex2::NUM_CODEBOOKS == 0);
+  this->is_trained = false;
+  DeviceScope scope(config_.device);
+  data_.reset(new MultiIndex2(resources_.get(), dims, config_.memorySpace));
+}
+
+GpuMultiIndex2::~GpuMultiIndex2() {}
+
+int GpuMultiIndex2::toMultiIndex(std::pair<ushort, ushort> indexPair) const {
+  ushort2 *indexPairUshort2 = (ushort2 *)&indexPair;
+  return this->data_->toMultiIndex(*indexPairUshort2);
+}
+
+int GpuMultiIndex2::getCodebookSize() { return this->data_->getCodebookSize(); }
+
+int GpuMultiIndex2::getNumCodebooks() { return this->data_->getNumCodebooks(); }
+
+int GpuMultiIndex2::getNumVecs() { return this->data_->getSize(); }
+
+int GpuMultiIndex2::getSubDim() { return this->subDim_; }
+
+std::vector<float> GpuMultiIndex2::getCentroids() {
+  auto stream = resources_->getDefaultStream(config_.device);
+  auto centroidsDevice = data_->getVectorsFloat32Ref();
+  std::vector<float> centroids(centroidsDevice.numElements());
+  fromDevice(centroidsDevice, centroids.data(), stream);
+  return centroids;
+}
+
+void GpuMultiIndex2::load(int codebookSize, const float *centroids) {
+  FAISS_ASSERT(data_);
+  FAISS_ASSERT(codebookSize > 0);
+
+  DeviceScope scope(config_.device);
+  // If it is trained, just resets
+  if (this->is_trained) {
+    data_->reset();
+  }
+
+  data_->add(centroids, GpuMultiIndex2::NUM_CODEBOOKS * codebookSize,
+             resources_->getDefaultStream(config_.device));
+
+  this->ntotal = 1;
+  for (int i = 0; i < GpuMultiIndex2::NUM_CODEBOOKS; i++) {
+    this->ntotal *= numVecsPerCodebook_;
+  }
+  this->is_trained = true;
+}
+
+void GpuMultiIndex2::reset() {
+  FAISS_THROW_MSG("This index has virtual elements, "
+                  "it does not support reset");
+}
+
+void GpuMultiIndex2::train(Index::idx_t n, const float *x) {
+  FAISS_ASSERT(data_);
+  FAISS_ASSERT(n > 0);
+
+  DeviceScope scope(config_.device);
+
+  // If it is trained, just resets and re-trains it
+  if (this->is_trained) {
+    data_->reset();
+  }
+
+  float *subQueries = new float[GpuMultiIndex2::NUM_CODEBOOKS * n * subDim_];
+  ScopeDeleter<float> delSubQueries(subQueries);
+  fvec_split(subQueries, GpuMultiIndex2::NUM_CODEBOOKS, x, (size_t)n, subDim_);
+
+  int numSubCentroids = GpuMultiIndex2::NUM_CODEBOOKS * numVecsPerCodebook_;
+  float *subCentroids = new float[(unsigned long)numSubCentroids * subDim_];
+  ScopeDeleter<float> delSubCentroids(subCentroids);
+
+#pragma omp parallel for
+  for (int i = 0; i < GpuMultiIndex2::NUM_CODEBOOKS; i++) {
+    kmeans_clustering(
+        subDim_, (size_t)n, numVecsPerCodebook_, subQueries + (i * n * subDim_),
+        subCentroids + (i * numVecsPerCodebook_ * subDim_), this->verbose);
+  }
+  data_->add(subCentroids, numSubCentroids,
+             resources_->getDefaultStream(config_.device));
+
+  CudaEvent addEnd(resources_->getDefaultStream(config_.device));
+
+  this->ntotal = 1;
+  for (int i = 0; i < GpuMultiIndex2::NUM_CODEBOOKS; i++) {
+    this->ntotal *= numVecsPerCodebook_;
+  }
+  this->is_trained = true;
+
+  // synchronizing to ensure that subQueries has not been deleted before copy
+  // ends
+  addEnd.cpuWaitOnEvent();
+}
+
+void GpuMultiIndex2::add(faiss::Index::idx_t n, const float *x) {
+  FAISS_THROW_MSG("This index has virtual elements, "
+                  "it does not support add");
+}
+
+void GpuMultiIndex2::add_with_ids(Index::idx_t n, const float *x,
+                                  const Index::idx_t *ids) {
+  FAISS_THROW_MSG("This index has virtual elements, "
+                  "it does not support add_with_ids");
+}
+
+void GpuMultiIndex2::assign(Index::idx_t n, const float *x,
+                            Index::idx_t *labels, Index::idx_t k) const {
+  FAISS_THROW_IF_NOT_MSG(this->is_trained, "Index not trained");
+
+  // For now, only support <= max int results
+  FAISS_THROW_IF_NOT_FMT(n <= (Index::idx_t)std::numeric_limits<int>::max(),
+                         "GPU index only supports up to %d indices",
+                         std::numeric_limits<int>::max());
+
+  if (this->numVecsPerCodebook_ > getMaxKSelection()) {
+    // Maximum k-selection supported is based on the CUDA SDK
+    FAISS_THROW_IF_NOT_FMT(k <= (Index::idx_t)getMaxKSelection(),
+                           "GPU index only supports k <= %d (requested %d)",
+                           getMaxKSelection(),
+                           (int)k); // select limitation
+  } else {
+    FAISS_THROW_IF_NOT_FMT(k <= (Index::idx_t)this->numVecsPerCodebook_ *
+                                    this->numVecsPerCodebook_,
+                           "GPU index only supports k <= %d (requested %d)",
+                           this->numVecsPerCodebook_ *
+                               this->numVecsPerCodebook_,
+                           (int)k); // select limitation
+  }
+
+  DeviceScope scope(config_.device);
+  auto stream = resources_->getDefaultStream(config_.device);
+
+  // We need to create a throw-away buffer for distances, which we don't use but
+  // which we do need for the search call
+  DeviceTensor<float, 2, true> distances(
+      resources_.get(), makeTempAlloc(AllocType::Other, stream),
+      {(int)n, (int)k});
+
+  // Forward to search
+  search(n, x, k, distances.data(), labels);
+}
+
+void GpuMultiIndex2::assign_pair(Index::idx_t n, const float *x,
+                                 std::pair<ushort, ushort> *labels,
+                                 Index::idx_t k) const {
+  FAISS_THROW_IF_NOT_MSG(this->is_trained, "Index not trained");
+
+  // For now, only support <= max int results
+  FAISS_THROW_IF_NOT_FMT(n <= (Index::idx_t)std::numeric_limits<int>::max(),
+                         "GPU index only supports up to %d indices",
+                         std::numeric_limits<int>::max());
+
+  if (this->numVecsPerCodebook_ > getMaxKSelection()) {
+    // Maximum k-selection supported is based on the CUDA SDK
+    FAISS_THROW_IF_NOT_FMT(k <= (Index::idx_t)getMaxKSelection(),
+                           "GPU index only supports k <= %d (requested %d)",
+                           getMaxKSelection(),
+                           (int)k); // select limitation
+  } else {
+    FAISS_THROW_IF_NOT_FMT(k <= (Index::idx_t)this->numVecsPerCodebook_ *
+                                    this->numVecsPerCodebook_,
+                           "GPU index only supports k <= %d (requested %d)",
+                           this->numVecsPerCodebook_ *
+                               this->numVecsPerCodebook_,
+                           (int)k); // select limitation
+  }
+
+  DeviceScope scope(config_.device);
+  auto stream = resources_->getDefaultStream(config_.device);
+
+  // We need to create a throw-away buffer for distances, which we don't use but
+  // which we do need for the search call
+  DeviceTensor<float, 2, true> distances(
+      resources_.get(), makeTempAlloc(AllocType::Other, stream),
+      {(int)n, (int)k});
+  search_pair(n, x, k, distances.data(), labels);
+}
+
+void GpuMultiIndex2::search(Index::idx_t n, const float *x, Index::idx_t k,
+                            float *distances, Index::idx_t *labels) const {
+  FAISS_THROW_IF_NOT_MSG(this->is_trained, "Index not trained");
+
+  // For now, only support <= max int results
+  FAISS_THROW_IF_NOT_FMT(n <= (Index::idx_t)std::numeric_limits<int>::max(),
+                         "GPU index only supports up to %d indices",
+                         std::numeric_limits<int>::max());
+
+  if (this->numVecsPerCodebook_ > getMaxKSelection()) {
+    // Maximum k-selection supported is based on the CUDA SDK
+    FAISS_THROW_IF_NOT_FMT(k <= (Index::idx_t)getMaxKSelection(),
+                           "GPU index only supports k <= %d (requested %d)",
+                           getMaxKSelection(),
+                           (int)k); // select limitation
+  } else {
+    FAISS_THROW_IF_NOT_FMT(k <= (Index::idx_t)this->numVecsPerCodebook_ *
+                                    this->numVecsPerCodebook_,
+                           "GPU index only supports k <= %d (requested %d)",
+                           this->numVecsPerCodebook_ *
+                               this->numVecsPerCodebook_,
+                           (int)k); // select limitation
+  }
+
+  if (n == 0 || k == 0) {
+    // nothing to search
+    return;
+  }
+
+  DeviceScope scope(config_.device);
+  auto stream = resources_->getDefaultStream(config_.device);
+
+  // We guarantee that the searchImpl_ will be called with device-resident
+  // pointers.
+
+  // The input vectors may be too large for the GPU, but we still
+  // assume that the output distances and labels are not.
+  // Go ahead and make space for output distances and labels on the
+  // GPU.
+  // If we reach a point where all inputs are too big, we can add
+  // another level of tiling.
+  auto outDistances = toDeviceTemporary<float, 2>(
+      resources_.get(), config_.device, distances, stream, {(int)n, (int)k});
+
+  auto outLabels = toDeviceTemporary<faiss::Index::idx_t, 2>(
+      resources_.get(), config_.device, labels, stream, {(int)n, (int)k});
+
+  bool usePaged = false;
+
+  if (getDeviceForAddress(x) == -1) {
+    // It is possible that the user is querying for a vector set size
+    // `x` that won't fit on the GPU.
+    // In this case, we will have to handle paging of the data from CPU
+    // -> GPU.
+    // Currently, we don't handle the case where the output data won't
+    // fit on the GPU (e.g., n * k is too large for the GPU memory).
+    size_t dataSize = (size_t)n * this->d * sizeof(float);
+
+    if (dataSize >= minPagedSize_) {
+      searchFromCpuPaged_(n, x, k, outDistances.data(), outLabels.data());
+      usePaged = true;
+    }
+  }
+
+  if (!usePaged) {
+    searchNonPaged_(n, x, k, outDistances.data(), outLabels.data());
+  }
+
+  // Copy back if necessary
+  fromDevice<float, 2>(outDistances, distances, stream);
+  fromDevice<faiss::Index::idx_t, 2>(outLabels, labels, stream);
+}
+
+void GpuMultiIndex2::searchNonPaged_(int n, const float *x, int k,
+                                     float *outDistancesData,
+                                     Index::idx_t *outIndicesData) const {
+  auto stream = resources_->getDefaultStream(config_.device);
+
+  // FIXME: Change location to searchFromCpuPaged_
+  float *subQueries = new float[n * this->d];
+  ScopeDeleter<float> delSubQueries(subQueries);
+  fvec_split(subQueries, GpuMultiIndex2::NUM_CODEBOOKS, x, (size_t)n, subDim_);
+
+  // Make sure arguments are on the device we desire; use temporary
+  // memory allocations to move it if necessary
+  auto vecs = toDeviceTemporary<float, 2>(
+      resources_.get(), config_.device, const_cast<float *>(subQueries), stream,
+      {GpuMultiIndex2::NUM_CODEBOOKS * n, (int)this->subDim_});
+
+  CudaEvent copyEnd(stream);
+
+  searchImpl_(n, vecs.data(), k, outDistancesData, outIndicesData);
+
+  // synchronizing to ensure that subQueries has not been deleted before copy
+  // ends
+  copyEnd.cpuWaitOnEvent();
+}
+
+void GpuMultiIndex2::searchFromCpuPaged_(int n, const float *x, int k,
+                                         float *outDistancesData,
+                                         Index::idx_t *outIndicesData) const {
+  Tensor<float, 2, true> outDistances(outDistancesData, {n, k});
+  Tensor<Index::idx_t, 2, true> outIndices(outIndicesData, {n, k});
+
+  // Is pinned memory available?
+  auto pinnedAlloc = resources_->getPinnedMemory();
+  int pageSizeInVecs =
+      (int)((pinnedAlloc.second / 2) / (sizeof(float) * this->d));
+
+  if (!pinnedAlloc.first || pageSizeInVecs < 1) {
+    // Just page without overlapping copy with compute
+    int batchSize = utils::nextHighestPowerOf2(
+        (int)((size_t)kNonPinnedPageSize / (sizeof(float) * this->d)));
+
+    for (int cur = 0; cur < n; cur += batchSize) {
+      int num = std::min(batchSize, n - cur);
+
+      auto outDistancesSlice = outDistances.narrowOutermost(cur, num);
+      auto outIndicesSlice = outIndices.narrowOutermost(cur, num);
+
+      searchNonPaged_(num, x + (size_t)cur * this->d, k,
+                      outDistancesSlice.data(), outIndicesSlice.data());
+    }
+    return;
+  }
+
+  //
+  // Pinned memory is available, so we can overlap copy with compute.
+  // We use two pinned memory buffers, and triple-buffer the
+  // procedure:
+  //
+  // 1 CPU copy -> pinned
+  // 2 pinned copy -> GPU
+  // 3 GPU compute
+  //
+  // 1 2 3 1 2 3 ...   (pinned buf A)
+  //   1 2 3 1 2 ...   (pinned buf B)
+  //     1 2 3 1 ...   (pinned buf A)
+  // time ->
+  //
+  auto defaultStream = resources_->getDefaultStream(config_.device);
+  auto copyStream = resources_->getAsyncCopyStream(config_.device);
+
+  FAISS_ASSERT((size_t)pageSizeInVecs * this->d <=
+               (size_t)std::numeric_limits<int>::max());
+
+  float *bufPinnedA = (float *)pinnedAlloc.first;
+  float *bufPinnedB = bufPinnedA + (size_t)pageSizeInVecs * this->d;
+  float *bufPinned[2] = {bufPinnedA, bufPinnedB};
+
+  // Reserve space on the GPU for the destination of the pinned buffer
+  // copy
+  DeviceTensor<float, 2, true> bufGpuA(
+      resources_.get(), makeTempAlloc(AllocType::Other, defaultStream),
+      {(int)pageSizeInVecs, (int)this->d});
+  DeviceTensor<float, 2, true> bufGpuB(
+      resources_.get(), makeTempAlloc(AllocType::Other, defaultStream),
+      {(int)pageSizeInVecs, (int)this->d});
+  DeviceTensor<float, 2, true> *bufGpus[2] = {&bufGpuA, &bufGpuB};
+
+  // Copy completion events for the pinned buffers
+  std::unique_ptr<CudaEvent> eventPinnedCopyDone[2];
+
+  // Execute completion events for the GPU buffers
+  std::unique_ptr<CudaEvent> eventGpuExecuteDone[2];
+
+  // All offsets are in terms of number of vectors; they remain within
+  // int bounds (as this function only handles max in vectors)
+
+  // Current start offset for buffer 1
+  int cur1 = 0;
+  int cur1BufIndex = 0;
+
+  // Current start offset for buffer 2
+  int cur2 = -1;
+  int cur2BufIndex = 0;
+
+  // Current start offset for buffer 3
+  int cur3 = -1;
+  int cur3BufIndex = 0;
+
+  while (cur3 < n) {
+    // Start async pinned -> GPU copy first (buf 2)
+    if (cur2 != -1 && cur2 < n) {
+      // Copy pinned to GPU
+      int numToCopy = std::min(pageSizeInVecs, n - cur2);
+
+      // Make sure any previous execution has completed before continuing
+      auto &eventPrev = eventGpuExecuteDone[cur2BufIndex];
+      if (eventPrev.get()) {
+        eventPrev->streamWaitOnEvent(copyStream);
+      }
+
+      CUDA_VERIFY(cudaMemcpyAsync(bufGpus[cur2BufIndex]->data(),
+                                  bufPinned[cur2BufIndex],
+                                  (size_t)numToCopy * this->d * sizeof(float),
+                                  cudaMemcpyHostToDevice, copyStream));
+
+      // Mark a completion event in this stream
+      eventPinnedCopyDone[cur2BufIndex].reset(new CudaEvent(copyStream));
+
+      // We pick up from here
+      cur3 = cur2;
+      cur2 += numToCopy;
+      cur2BufIndex = (cur2BufIndex == 0) ? 1 : 0;
+    }
+
+    if (cur3 != -1 && cur3 < n) {
+      // Process on GPU
+      int numToProcess = std::min(pageSizeInVecs, n - cur3);
+
+      // Make sure the previous copy has completed before continuing
+      auto &eventPrev = eventPinnedCopyDone[cur3BufIndex];
+      FAISS_ASSERT(eventPrev.get());
+
+      eventPrev->streamWaitOnEvent(defaultStream);
+
+      // Create tensor wrappers
+      // DeviceTensor<float, 2, true> input(bufGpus[cur3BufIndex]->data(),
+      //                                    {numToProcess, this->d});
+      auto outDistancesSlice = outDistances.narrowOutermost(cur3, numToProcess);
+      auto outIndicesSlice = outIndices.narrowOutermost(cur3, numToProcess);
+
+      searchImpl_(numToProcess, bufGpus[cur3BufIndex]->data(), k,
+                  outDistancesSlice.data(), outIndicesSlice.data());
+
+      // Create completion event
+      eventGpuExecuteDone[cur3BufIndex].reset(new CudaEvent(defaultStream));
+
+      // We pick up from here
+      cur3BufIndex = (cur3BufIndex == 0) ? 1 : 0;
+      cur3 += numToProcess;
+    }
+
+    if (cur1 < n) {
+      // Copy CPU mem to CPU pinned
+      int numToCopy = std::min(pageSizeInVecs, n - cur1);
+
+      // Make sure any previous copy has completed before continuing
+      auto &eventPrev = eventPinnedCopyDone[cur1BufIndex];
+      if (eventPrev.get()) {
+        eventPrev->cpuWaitOnEvent();
+      }
+
+      fvec_split(bufPinned[cur1BufIndex], GpuMultiIndex2::NUM_CODEBOOKS,
+                 x + (size_t)cur1 * this->d, (size_t)numToCopy, subDim_);
+
+      // We pick up from here
+      cur2 = cur1;
+      cur1 += numToCopy;
+      cur1BufIndex = (cur1BufIndex == 0) ? 1 : 0;
+    }
+  }
+}
+
+void GpuMultiIndex2::search_pair(Index::idx_t n, const float *x, Index::idx_t k,
+                                 float *distances,
+                                 std::pair<ushort, ushort> *labels) const {
+  static_assert(sizeof(std::pair<ushort, ushort>) == sizeof(ushort2));
+  FAISS_THROW_IF_NOT_MSG(this->is_trained, "Index not trained");
+
+  // For now, only support <= max int results
+  FAISS_THROW_IF_NOT_FMT(n <= (Index::idx_t)std::numeric_limits<int>::max(),
+                         "GPU index only supports up to %d indices",
+                         std::numeric_limits<int>::max());
+
+  if (this->numVecsPerCodebook_ > getMaxKSelection()) {
+    // Maximum k-selection supported is based on the CUDA SDK
+    FAISS_THROW_IF_NOT_FMT(k <= (Index::idx_t)getMaxKSelection(),
+                           "GPU index only supports k <= %d (requested %d)",
+                           getMaxKSelection(),
+                           (int)k); // select limitation
+  } else {
+    FAISS_THROW_IF_NOT_FMT(k <= (Index::idx_t)this->numVecsPerCodebook_ *
+                                    this->numVecsPerCodebook_,
+                           "GPU index only supports k <= %d (requested %d)",
+                           this->numVecsPerCodebook_ *
+                               this->numVecsPerCodebook_,
+                           (int)k); // select limitation
+  }
+
+  if (n == 0 || k == 0) {
+    // nothing to search
+    return;
+  }
+
+  DeviceScope scope(config_.device);
+  auto stream = resources_->getDefaultStream(config_.device);
+
+  // We guarantee that the searchImpl_ will be called with device-resident
+  // pointers.
+
+  // The input vectors may be too large for the GPU, but we still
+  // assume that the output distances and labels are not.
+  // Go ahead and make space for output distances and labels on the
+  // GPU.
+  // If we reach a point where all inputs are too big, we can add
+  // another level of tiling.
+  auto outDistances = toDeviceTemporary<float, 2>(
+      resources_.get(), config_.device, distances, stream, {(int)n, (int)k});
+
+  auto outLabels = toDeviceTemporary<ushort2, 2>(
+      resources_.get(), config_.device, (ushort2 *)labels, stream,
+      {(int)n, (int)k});
+
+  bool usePaged = false;
+
+  if (getDeviceForAddress(x) == -1) {
+    // It is possible that the user is querying for a vector set size
+    // `x` that won't fit on the GPU.
+    // In this case, we will have to handle paging of the data from CPU
+    // -> GPU.
+    // Currently, we don't handle the case where the output data won't
+    // fit on the GPU (e.g., n * k is too large for the GPU memory).
+    size_t dataSize = (size_t)n * this->d * sizeof(float);
+
+    if (dataSize >= minPagedSize_) {
+      searchFromCpuPaged_(n, x, k, outDistances.data(),
+                          (std::pair<ushort, ushort> *)outLabels.data());
+      usePaged = true;
+    }
+  }
+
+  if (!usePaged) {
+    searchNonPaged_(n, x, k, outDistances.data(),
+                    (std::pair<ushort, ushort> *)outLabels.data());
+  }
+
+  // Copy back if necessary
+  fromDevice<float, 2>(outDistances, distances, stream);
+  fromDevice<ushort2, 2>(outLabels, (ushort2 *)labels, stream);
+}
+
+void GpuMultiIndex2::searchNonPaged_(
+    int n, const float *x, int k, float *outDistancesData,
+    std::pair<ushort, ushort> *outIndicesData) const {
+  auto stream = resources_->getDefaultStream(config_.device);
+
+  // FIXME: Change location to searchFromCpuPaged_
+  float *subQueries = new float[n * this->d];
+  ScopeDeleter<float> delSubQueries(subQueries);
+  fvec_split(subQueries, GpuMultiIndex2::NUM_CODEBOOKS, x, (size_t)n, subDim_);
+
+  // Make sure arguments are on the device we desire; use temporary
+  // memory allocations to move it if necessary
+  auto vecs = toDeviceTemporary<float, 2>(
+      resources_.get(), config_.device, const_cast<float *>(subQueries), stream,
+      {GpuMultiIndex2::NUM_CODEBOOKS * n, (int)this->subDim_});
+
+  CudaEvent copyEnd(stream);
+
+  searchPairImpl_(n, vecs.data(), k, outDistancesData, outIndicesData);
+
+  // synchronizing to ensure that subQueries has not been deleted before copy
+  // ends
+  copyEnd.cpuWaitOnEvent();
+}
+
+void GpuMultiIndex2::searchFromCpuPaged_(
+    int n, const float *x, int k, float *outDistancesData,
+    std::pair<ushort, ushort> *outIndicesData) const {
+  static_assert(sizeof(std::pair<ushort, ushort>) == sizeof(ushort2));
+  Tensor<float, 2, true> outDistances(outDistancesData, {n, k});
+  Tensor<ushort2, 2, true> outIndices((ushort2 *)outIndicesData, {n, k});
+
+  // Is pinned memory available?
+  auto pinnedAlloc = resources_->getPinnedMemory();
+  int pageSizeInVecs =
+      (int)((pinnedAlloc.second / 2) / (sizeof(float) * this->d));
+
+  if (!pinnedAlloc.first || pageSizeInVecs < 1) {
+    // Just page without overlapping copy with compute
+    int batchSize = utils::nextHighestPowerOf2(
+        (int)((size_t)kNonPinnedPageSize / (sizeof(float) * this->d)));
+
+    for (int cur = 0; cur < n; cur += batchSize) {
+      int num = std::min(batchSize, n - cur);
+
+      auto outDistancesSlice = outDistances.narrowOutermost(cur, num);
+      auto outIndicesSlice = outIndices.narrowOutermost(cur, num);
+
+      searchNonPaged_(num, x + (size_t)cur * this->d, k,
+                      outDistancesSlice.data(),
+                      (std::pair<ushort, ushort> *)outIndicesSlice.data());
+    }
+    return;
+  }
+
+  //
+  // Pinned memory is available, so we can overlap copy with compute.
+  // We use two pinned memory buffers, and triple-buffer the
+  // procedure:
+  //
+  // 1 CPU copy -> pinned
+  // 2 pinned copy -> GPU
+  // 3 GPU compute
+  //
+  // 1 2 3 1 2 3 ...   (pinned buf A)
+  //   1 2 3 1 2 ...   (pinned buf B)
+  //     1 2 3 1 ...   (pinned buf A)
+  // time ->
+  //
+  auto defaultStream = resources_->getDefaultStream(config_.device);
+  auto copyStream = resources_->getAsyncCopyStream(config_.device);
+
+  FAISS_ASSERT((size_t)pageSizeInVecs * this->d <=
+               (size_t)std::numeric_limits<int>::max());
+
+  float *bufPinnedA = (float *)pinnedAlloc.first;
+  float *bufPinnedB = bufPinnedA + (size_t)pageSizeInVecs * this->d;
+  float *bufPinned[2] = {bufPinnedA, bufPinnedB};
+
+  // Reserve space on the GPU for the destination of the pinned buffer
+  // copy
+  DeviceTensor<float, 2, true> bufGpuA(
+      resources_.get(), makeTempAlloc(AllocType::Other, defaultStream),
+      {(int)pageSizeInVecs, (int)this->d});
+  DeviceTensor<float, 2, true> bufGpuB(
+      resources_.get(), makeTempAlloc(AllocType::Other, defaultStream),
+      {(int)pageSizeInVecs, (int)this->d});
+  DeviceTensor<float, 2, true> *bufGpus[2] = {&bufGpuA, &bufGpuB};
+
+  // Copy completion events for the pinned buffers
+  std::unique_ptr<CudaEvent> eventPinnedCopyDone[2];
+
+  // Execute completion events for the GPU buffers
+  std::unique_ptr<CudaEvent> eventGpuExecuteDone[2];
+
+  // All offsets are in terms of number of vectors; they remain within
+  // int bounds (as this function only handles max in vectors)
+
+  // Current start offset for buffer 1
+  int cur1 = 0;
+  int cur1BufIndex = 0;
+
+  // Current start offset for buffer 2
+  int cur2 = -1;
+  int cur2BufIndex = 0;
+
+  // Current start offset for buffer 3
+  int cur3 = -1;
+  int cur3BufIndex = 0;
+
+  while (cur3 < n) {
+    // Start async pinned -> GPU copy first (buf 2)
+    if (cur2 != -1 && cur2 < n) {
+      // Copy pinned to GPU
+      int numToCopy = std::min(pageSizeInVecs, n - cur2);
+
+      // Make sure any previous execution has completed before continuing
+      auto &eventPrev = eventGpuExecuteDone[cur2BufIndex];
+      if (eventPrev.get()) {
+        eventPrev->streamWaitOnEvent(copyStream);
+      }
+
+      CUDA_VERIFY(cudaMemcpyAsync(bufGpus[cur2BufIndex]->data(),
+                                  bufPinned[cur2BufIndex],
+                                  (size_t)numToCopy * this->d * sizeof(float),
+                                  cudaMemcpyHostToDevice, copyStream));
+
+      // Mark a completion event in this stream
+      eventPinnedCopyDone[cur2BufIndex].reset(new CudaEvent(copyStream));
+
+      // We pick up from here
+      cur3 = cur2;
+      cur2 += numToCopy;
+      cur2BufIndex = (cur2BufIndex == 0) ? 1 : 0;
+    }
+
+    if (cur3 != -1 && cur3 < n) {
+      // Process on GPU
+      int numToProcess = std::min(pageSizeInVecs, n - cur3);
+
+      // Make sure the previous copy has completed before continuing
+      auto &eventPrev = eventPinnedCopyDone[cur3BufIndex];
+      FAISS_ASSERT(eventPrev.get());
+
+      eventPrev->streamWaitOnEvent(defaultStream);
+
+      // Create tensor wrappers
+      // DeviceTensor<float, 2, true> input(bufGpus[cur3BufIndex]->data(),
+      //                                    {numToProcess, this->d});
+      auto outDistancesSlice = outDistances.narrowOutermost(cur3, numToProcess);
+      auto outIndicesSlice = outIndices.narrowOutermost(cur3, numToProcess);
+
+      searchPairImpl_(numToProcess, bufGpus[cur3BufIndex]->data(), k,
+                      outDistancesSlice.data(),
+                      (std::pair<ushort, ushort> *)outIndicesSlice.data());
+
+      // Create completion event
+      eventGpuExecuteDone[cur3BufIndex].reset(new CudaEvent(defaultStream));
+
+      // We pick up from here
+      cur3BufIndex = (cur3BufIndex == 0) ? 1 : 0;
+      cur3 += numToProcess;
+    }
+
+    if (cur1 < n) {
+      // Copy CPU mem to CPU pinned
+      int numToCopy = std::min(pageSizeInVecs, n - cur1);
+
+      // Make sure any previous copy has completed before continuing
+      auto &eventPrev = eventPinnedCopyDone[cur1BufIndex];
+      if (eventPrev.get()) {
+        eventPrev->cpuWaitOnEvent();
+      }
+
+      fvec_split(bufPinned[cur1BufIndex], GpuMultiIndex2::NUM_CODEBOOKS,
+                 x + (size_t)cur1 * this->d, (size_t)numToCopy, subDim_);
+
+      // We pick up from here
+      cur2 = cur1;
+      cur1 += numToCopy;
+      cur1BufIndex = (cur1BufIndex == 0) ? 1 : 0;
+    }
+  }
+}
+
+bool GpuMultiIndex2::addImplRequiresIDs_() const {
+  FAISS_THROW_MSG("This index has virtual elements, "
+                  "it does not support add");
+}
+
+void GpuMultiIndex2::addImpl_(int n, const float *x, const Index::idx_t *ids) {
+  FAISS_THROW_MSG("This index has virtual elements, "
+                  "it does not support add");
+}
+
+void GpuMultiIndex2::searchImpl_(int n, const float *x, int k, float *distances,
+                                 Index::idx_t *labels) const {
+  auto stream = resources_->getDefaultStream(config_.device);
+
+  // Input and output data are already resident on the GPU
+  Tensor<float, 2, true> queries(
+      const_cast<float *>(x),
+      {GpuMultiIndex2::NUM_CODEBOOKS * n, this->subDim_});
+  Tensor<float, 2, true> outDistances(distances, {n, k});
+  Tensor<Index::idx_t, 2, true> outLabels(labels, {n, k});
+
+  data_->query(queries, k, outDistances, outLabels, true);
+}
+
+void GpuMultiIndex2::searchPairImpl_(int n, const float *x, int k,
+                                     float *distances,
+                                     std::pair<ushort, ushort> *labels) const {
+  static_assert(sizeof(std::pair<ushort, ushort>) == sizeof(ushort2));
+  auto stream = resources_->getDefaultStream(config_.device);
+
+  // Input and output data are already resident on the GPU
+  Tensor<float, 2, true> queries(
+      const_cast<float *>(x),
+      {GpuMultiIndex2::NUM_CODEBOOKS * n, this->subDim_});
+  Tensor<float, 2, true> outDistances(distances, {n, k});
+  Tensor<ushort2, 2, true> outLabels((ushort2 *)labels, {n, k});
+
+  data_->query(queries, k, outDistances, outLabels, true);
+}
+
+void GpuMultiIndex2::compute_residual_pair(
+    const float *x, float *residual, std::pair<ushort, ushort> key) const {
+  compute_residual_n_pair(1, x, residual, &key);
+}
+
+void GpuMultiIndex2::compute_residual_n_pair(
+    faiss::Index::idx_t n, const float *xs, float *residuals,
+    const std::pair<ushort, ushort> *keys) const {
+  FAISS_THROW_IF_NOT_FMT(
+      n <= (faiss::Index::idx_t)std::numeric_limits<int>::max(),
+      "GPU index only supports up to %zu indices",
+      (size_t)std::numeric_limits<int>::max());
+
+  auto stream = resources_->getDefaultStream(config_.device);
+
+  DeviceScope scope(config_.device);
+
+  float *subQueries = new float[n * this->d];
+  ScopeDeleter<float> delSubQueries(subQueries);
+  fvec_split(subQueries, GpuMultiIndex2::NUM_CODEBOOKS, xs, (size_t)n, subDim_);
+
+  auto vecsDevice = toDeviceTemporary<float, 2>(
+      resources_.get(), config_.device, const_cast<float *>(subQueries), stream,
+      {GpuMultiIndex2::NUM_CODEBOOKS * (int)n, (int)this->subDim_});
+
+  CudaEvent copyEnd(stream);
+
+  auto idsDevice = toDeviceTemporary<ushort2, 1>(
+      resources_.get(), config_.device, (ushort2 *)(keys), stream, {(int)n});
+
+  DeviceTensor<float, 2, true> residualDevice(
+      resources_.get(), makeTempAlloc(AllocType::Other, stream),
+      {(int)n, (int)this->d});
+
+  FAISS_ASSERT(data_);
+  data_->computeResidual(vecsDevice, idsDevice, residualDevice);
+
+  fromDevice<float, 2>(residualDevice, residuals, stream);
+
+  // synchronizing to ensure that subQueries has not been deleted before copy
+  // ends
+  copyEnd.cpuWaitOnEvent();
+}
+
+void GpuMultiIndex2::compute_nearest_residual_n(faiss::Index::idx_t n,
+                                                const float *x,
+                                                float *residuals) const {
+  std::vector<std::pair<ushort, ushort>> keys(n);
+  assign_pair(n, x, keys.data());
+
+  // FIXME jhj convert to _n version
+  for (idx_t i = 0; i < n; i++) {
+    compute_residual_pair(x + i * d, &residuals[i * d], keys[i]);
+  }
+}
+
+} // namespace gpu
+} // namespace faiss

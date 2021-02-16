@@ -157,12 +157,15 @@ void binary_to_real(size_t d, const uint8_t *x_in, float *x_out);
  */
 void real_to_binary(size_t d, const float *x_in, uint8_t *x_out);
 
-
 /** A reasonable hashing function */
 uint64_t hash_bytes (const uint8_t *bytes, int64_t n);
 
 /** Whether OpenMP annotations were respected. */
 bool check_openmp();
+
+/** Divides the dimension of queries */
+void fvec_split(float *outs, const int numOuts, const float *in,
+                size_t inLength, int inSubDim);
 
 } // namspace faiss
 

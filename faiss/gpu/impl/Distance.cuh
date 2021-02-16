@@ -33,6 +33,18 @@ void runL2Distance(GpuResources* resources,
                    // take shortcuts.
                    bool ignoreOutDistances = false);
 
+void runL2Distance(GpuResources *resources, Tensor<float, 2, true> &vectors,
+                   bool vectorsRowMajor,
+                   // can be optionally pre-computed; nullptr if we
+                   // have to compute it upon the call
+                   Tensor<float, 1, true> *vectorNorms,
+                   Tensor<float, 2, true> &queries, bool queriesRowMajor, int k,
+                   Tensor<float, 2, true> &outDistances,
+                   Tensor<unsigned short, 2, true> &outIndices,
+                   // Do we care about `outDistances`? If not, we can
+                   // take shortcuts.
+                   bool ignoreOutDistances = false);
+
 /// Calculates brute-force inner product distance between `vectors`
 /// and `queries`, returning the k closest results seen
 void runIPDistance(GpuResources* resources,
@@ -62,6 +74,13 @@ void runL2Distance(GpuResources* resources,
                    int k,
                    Tensor<float, 2, true>& outDistances,
                    Tensor<int, 2, true>& outIndices,
+                   bool ignoreOutDistances = false);
+
+void runL2Distance(GpuResources *resources, Tensor<half, 2, true> &vectors,
+                   bool vectorsRowMajor, Tensor<float, 1, true> *vectorNorms,
+                   Tensor<half, 2, true> &queries, bool queriesRowMajor, int k,
+                   Tensor<float, 2, true> &outDistances,
+                   Tensor<unsigned short, 2, true> &outIndices,
                    bool ignoreOutDistances = false);
 
 //

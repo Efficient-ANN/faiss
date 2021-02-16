@@ -121,7 +121,18 @@ float kmeans_clustering (size_t d, size_t n, size_t k,
                          const float *x,
                          float *centroids);
 
-
+/** simplified interface
+ *
+ * @param d dimension of the data
+ * @param n nb of training vectors
+ * @param k nb of output centroids
+ * @param x training set (size n * d)
+ * @param centroids output centroids (size k * d)
+ * @param verbose write iterations on screen
+ * @return final quantization error
+ */
+float kmeans_clustering(size_t d, size_t n, size_t k, const float *x,
+                        float *centroids, bool verbose);
 
 }
 

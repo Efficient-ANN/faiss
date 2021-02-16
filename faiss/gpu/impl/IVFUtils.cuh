@@ -28,6 +28,16 @@ void runCalcListOffsets(GpuResources* res,
                         Tensor<char, 1, true>& thrustMem,
                         cudaStream_t stream);
 
+/// Function for multi-pass scanning that collects the length of
+/// intermediate results for all (query, probe) pair
+void runCalcListOffsets(GpuResources* res,
+                        int coarseCodebookSize,
+                        Tensor<ushort2, 2, true>& topQueryToCentroid,
+                        thrust::device_vector<int>& listLengths,
+                        Tensor<int, 2, true>& prefixSumOffsets,
+                        Tensor<char, 1, true>& thrustMem,
+                        cudaStream_t stream);
+
 /// Performs a first pass of k-selection on the results
 void runPass1SelectLists(Tensor<int, 2, true>& prefixSumOffsets,
                          Tensor<float, 1, true>& distance,
@@ -46,6 +56,21 @@ void runPass2SelectLists(Tensor<float, 2, true>& heapDistances,
                          IndicesOptions indicesOptions,
                          Tensor<int, 2, true>& prefixSumOffsets,
                          Tensor<int, 2, true>& topQueryToCentroid,
+                         int k,
+                         bool chooseLargest,
+                         Tensor<float, 2, true>& outDistances,
+                         Tensor<Index::idx_t, 2, true>& outIndices,
+                         cudaStream_t stream);
+
+/// Performs a final pass of k-selection on the results, producing the
+/// final indices
+void runPass2SelectLists(Tensor<float, 2, true>& heapDistances,
+                         Tensor<int, 2, true>& heapIndices,
+                         thrust::device_vector<void*>& listIndices,
+                         IndicesOptions indicesOptions,
+                         Tensor<int, 2, true>& prefixSumOffsets,
+                         int coarseCodebookSize,
+                         Tensor<ushort2, 2, true>& topQueryToCentroid,
                          int k,
                          bool chooseLargest,
                          Tensor<float, 2, true>& outDistances,

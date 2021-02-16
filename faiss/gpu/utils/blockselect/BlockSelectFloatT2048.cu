@@ -12,6 +12,7 @@ namespace faiss { namespace gpu {
 
 #if GPU_MAX_SELECTION_K >= 2048
 BLOCK_SELECT_IMPL(float, true, 2048, 8);
+BLOCK_SELECT_IMPL_INDEX(float, true, 2048, 8, ushort);
 #endif
 
 } } // namespace

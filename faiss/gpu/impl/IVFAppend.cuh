@@ -52,6 +52,16 @@ void runIVFPQInterleavedAppend(Tensor<int, 1, true>& listIds,
                                thrust::device_vector<void*>& listCodes,
                                cudaStream_t stream);
 
+/// Append PQ codes to IVF lists (interleaved format)
+void runIVFPQInterleavedAppend(Tensor<int, 1, true>& uniqueLists,
+                               Tensor<int, 1, true>& vectorsByUniqueList,
+                               Tensor<int, 1, true>& uniqueListVectorStart,
+                               Tensor<int, 1, true>& uniqueListStartOffset,
+                               int bitsPerCode,
+                               Tensor<uint8_t, 2, true>& encodings,
+                               thrust::device_vector<void*>& listCodes,
+                               cudaStream_t stream);
+
 /// Append SQ codes to IVF lists (non-interleaved, old format)
 void runIVFFlatAppend(Tensor<int, 1, true>& listIds,
                       Tensor<int, 1, true>& listOffset,

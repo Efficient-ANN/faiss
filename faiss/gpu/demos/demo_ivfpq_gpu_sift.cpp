@@ -1,0 +1,271 @@
+#include <algorithm>
+#include <cassert>
+#include <cstdio>
+#include <ctime>
+#include <faiss/Index.h>
+#include <faiss/IndexIVFPQ.h>
+#include <faiss/MetricType.h>
+#include <faiss/gpu/GpuCloner.h>
+#include <faiss/gpu/GpuIndexIVFPQ.h>
+#include <faiss/gpu/GpuIndicesOptions.h>
+#include <faiss/gpu/StandardGpuResources.h>
+#include <faiss/gpu/utils/DeviceUtils.h>
+#include <faiss/index_io.h>
+#include <faiss/utils/vecs_storage.h>
+#include <iomanip>
+#include <iostream>
+#include <omp.h>
+#include <string>
+#include <sys/types.h>
+
+void search(faiss::gpu::StandardGpuResources *res, faiss::Index *index,
+            float *queries, int *groundTruth, size_t numQueries, int kBegin,
+            int kEnd, int groundTruthK) {
+  std::vector<int> kList = {1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048};
+  clock_t tStart, tEnd;
+  double tGpu;
+
+  for (int i = kBegin > 0 ? kBegin : 0; i < kEnd && i < kList.size(); i++) {
+    int k = kList[i];
+    std::cout << "k: " << k << std::endl;
+
+    std::vector<float> outDistances(numQueries * k);
+    std::vector<faiss::Index::idx_t> outLabels(numQueries * k);
+
+    tStart = clock();
+    index->search(numQueries, queries, k, outDistances.data(),
+                  outLabels.data());
+    faiss::gpu::CudaEvent copyEnd(res->getDefaultStreamCurrentDevice());
+    copyEnd.cpuWaitOnEvent();
+    tEnd = clock();
+    tGpu = (double)(tEnd - tStart) / CLOCKS_PER_SEC;
+    std::cout << "IVFPQ search time on GPU: " << tGpu << std::endl;
+
+    int n_1 = 0, n_10 = 0, n_100 = 0, n_1000 = 0;
+    for (int a = 0; a < numQueries; a++) {
+      faiss::Index::idx_t firstGrounTruthId = groundTruth[a * groundTruthK];
+      for (int b = 0; b < k; b++) {
+        if (outLabels[a * k + b] == firstGrounTruthId) {
+          if (b < 1) {
+            n_1++;
+          }
+          if (b < 10) {
+            n_10++;
+          }
+          if (b < 100) {
+            n_100++;
+          }
+          if (b < 1000) {
+            n_1000++;
+          }
+          break;
+        }
+      }
+    }
+    std::cout << "R@1 = " << n_1 / double(numQueries) << std::endl;
+    std::cout << "R@10 = " << n_10 / double(numQueries) << std::endl;
+    std::cout << "R@100 = " << n_100 / double(numQueries) << std::endl;
+    std::cout << "R@1000 = " << n_1000 / double(numQueries) << std::endl;
+  }
+}
+
+template <bool isVecFloat>
+void demo_ivfpq(int d, int nbitsCoarseQuantizer, int numSubQuantizers,
+                int nbitsSubQuantizer, std::string fileNameTraining,
+                size_t numTrainingVecs, std::string fileNameIndexing,
+                size_t numIndexingVecs, std::string fileNameQueries,
+                std::string fileNameGroundTruth, int numQueriesBegin,
+                int numQueriesEnd, int nprobeBegin, int nprobeEnd, int kBegin,
+                int kEnd, bool usePrecomputed, std::string fileNameIndex) {
+  int coarseCodebookSize = 1 << nbitsCoarseQuantizer;
+  faiss::gpu::StandardGpuResources res;
+  faiss::gpu::GpuIndexIVFPQConfig config;
+  // res.noTempMemory();
+  config.indicesOptions = faiss::gpu::INDICES_32_BIT;
+  config.usePrecomputedTables = usePrecomputed;
+  int nlist = coarseCodebookSize;
+  faiss::gpu::GpuIndexIVFPQ *ivfpq;
+  clock_t tStart, tEnd;
+  double tGpu;
+  int readedDim;
+
+  bool isLoadead = false;
+
+  if (!fileNameIndex.empty()) {
+    FILE *f = fopen(fileNameIndex.c_str(), "rb");
+    if (f) {
+      fclose(f);
+      faiss::Index *cpu_index = dynamic_cast<faiss::IndexIVFPQ *>(
+          faiss::read_index(fileNameIndex.c_str()));
+      ivfpq = dynamic_cast<faiss::gpu::GpuIndexIVFPQ *>(
+          faiss::gpu::index_gpu_to_cpu(cpu_index));
+      delete cpu_index;
+      isLoadead = true;
+    } else {
+      fclose(f);
+    }
+  }
+
+  if (!isLoadead) {
+    ivfpq = new faiss::gpu::GpuIndexIVFPQ(&res, d, nlist, numSubQuantizers,
+                                          nbitsSubQuantizer, faiss::METRIC_L2,
+                                          config);
+    { // train
+      float *trainingVecs;
+      if (isVecFloat) {
+        trainingVecs = faiss::fvecs_read(fileNameTraining.c_str(),
+                                         numTrainingVecs, 0, &readedDim);
+      } else {
+        trainingVecs = faiss::bvecs_read(fileNameTraining.c_str(),
+                                         numTrainingVecs, 0, &readedDim);
+      }
+      assert(d == readedDim);
+      tStart = clock();
+      ivfpq->train(numTrainingVecs, trainingVecs);
+      tEnd = clock();
+      tGpu = (double)(tEnd - tStart) / CLOCKS_PER_SEC;
+      std::cout << "IVFPQ train time on GPU: " << tGpu << std::endl;
+      delete trainingVecs;
+    }
+
+    { // add
+      size_t maxAddTileSize = 512 * 1024 * 1024;
+      size_t numVecsTile = maxAddTileSize / (d * sizeof(float));
+      numVecsTile = std::min(numVecsTile, numIndexingVecs);
+      numVecsTile = std::max(numVecsTile, (size_t)1);
+      for (size_t i = 0; i < numIndexingVecs; i += numVecsTile) {
+        size_t currentNumVecsTile = std::min(numVecsTile, numIndexingVecs - i);
+        float *indexingVecs;
+        if (isVecFloat) {
+          indexingVecs = faiss::fvecs_read(fileNameIndexing.c_str(),
+                                           currentNumVecsTile, i, &readedDim);
+        } else {
+          indexingVecs = faiss::bvecs_read(fileNameIndexing.c_str(),
+                                           currentNumVecsTile, i, &readedDim);
+        }
+        assert(d == readedDim);
+        tStart = clock();
+        ivfpq->add(currentNumVecsTile, indexingVecs);
+        tEnd = clock();
+        tGpu = (double)(tEnd - tStart) / CLOCKS_PER_SEC;
+        std::cout << "IVFPQ add time on GPU: " << tGpu << std::endl;
+        delete indexingVecs;
+      }
+    }
+    if (!fileNameIndex.empty()) {
+      faiss::Index *cpu_index = faiss::gpu::index_gpu_to_cpu(ivfpq);
+      faiss::write_index(cpu_index, fileNameIndex.c_str());
+      delete cpu_index;
+    }
+  }
+
+  std::vector<int> numQueriesList = {1, 1000, 8192, 10000};
+  std::vector<int> nprobeList = {1,  2,   4,   8,   16,   32,
+                                 64, 128, 256, 512, 1024, 2048};
+
+  float *queries;
+  if (isVecFloat) {
+    queries = faiss::fvecs_read(fileNameQueries.c_str(),
+                                (size_t)numQueriesList[numQueriesEnd - 1], 0,
+                                &readedDim);
+  } else {
+    queries = faiss::bvecs_read(fileNameQueries.c_str(),
+                                (size_t)numQueriesList[numQueriesEnd - 1], 0,
+                                &readedDim);
+  }
+  assert(d == readedDim);
+  int *groundTruth =
+      faiss::ivecs_read(fileNameGroundTruth.c_str(),
+                        numQueriesList[numQueriesEnd - 1], 0, &readedDim);
+  
+  size_t devFree = 0;
+  size_t devTotal = 0;
+
+  CUDA_VERIFY(cudaMemGetInfo(&devFree, &devTotal));
+  std::cout << "-------Memory-------" << std::endl;
+  std::cout << "Free: " << devFree << std::endl;
+  std::cout << "Total: " << devTotal << std::endl;
+
+  for (int i = numQueriesBegin > 0 ? numQueriesBegin : 0;
+       i < numQueriesEnd && i < numQueriesList.size(); i++) {
+    int numQueries = numQueriesList[i];
+    std::cout << "numOfQueries: " << numQueries
+              << " ===============" << std::endl;
+    for (int j = nprobeBegin > 0 ? nprobeBegin : 0;
+         j < nprobeEnd && j < nprobeList.size(); j++) {
+      int nprobe = nprobeList[j];
+      std::cout << "nprobe: " << nprobe << "---------" << std::endl;
+      ivfpq->setNumProbes(nprobe);
+      search(&res, ivfpq, queries, groundTruth, numQueries, kBegin, kEnd,
+             readedDim);
+    }
+  }
+  delete queries;
+  delete groundTruth;
+  delete ivfpq;
+}
+
+int main(int argc, char **argv) {
+  if (argc <= 17) {
+    std::cout << "There must be 17 or more parameters" << std::endl;
+    return 1;
+  }
+
+  int d, nbitsCoarseQuantizer, numSubQuantizers, nbitsSubQuantizer,
+      numQueriesBegin, numQueriesEnd, kBegin, kEnd, nprobeBegin, nprobeEnd,
+      isFloat, usePrecomputed, numThreads;
+  size_t numTrainingVecs, numIndexingVecs;
+  std::string fileNameTraining, fileNameIndexing, fileNameQueries,
+      fileNameGroundTruth, fileNameIndex;
+
+  d = std::stoi(argv[1]);
+  nbitsCoarseQuantizer = std::stoi(argv[2]);
+  numSubQuantizers = std::stoi(argv[3]);
+  nbitsSubQuantizer = std::stoi(argv[4]);
+  fileNameTraining = argv[5];
+  numTrainingVecs = std::stoul(argv[6]);
+  fileNameIndexing = argv[7];
+  numIndexingVecs = std::stoul(argv[8]);
+  fileNameQueries = argv[9];
+  fileNameGroundTruth = argv[10];
+  numQueriesBegin = std::stoi(argv[11]);
+  numQueriesEnd = std::stoi(argv[12]);
+  nprobeBegin = std::stoi(argv[13]);
+  nprobeEnd = std::stoi(argv[14]);
+  kBegin = std::stoi(argv[15]);
+  kEnd = std::stoi(argv[16]);
+  isFloat = std::stoi(argv[17]);
+  usePrecomputed = argc > 18 ? std::stoi(argv[18]) : 0;
+  numThreads = argc > 19 ? std::stoi(argv[19]) : 1;
+  fileNameIndex = "";
+  // fileNameIndex = argc > 20 ? argv[20] : "";
+
+  omp_set_num_threads(numThreads);
+
+  std::cout << std::setprecision(6) << std::fixed;
+
+  size_t devFree = 0;
+  size_t devTotal = 0;
+
+  CUDA_VERIFY(cudaMemGetInfo(&devFree, &devTotal));
+  std::cout << "-------Memory-------" << std::endl;
+  std::cout << "Free: " << devFree << std::endl;
+  std::cout << "Total: " << devTotal << std::endl;
+
+  if (isFloat == 1) {
+    demo_ivfpq<true>(d, nbitsCoarseQuantizer, numSubQuantizers,
+                     nbitsSubQuantizer, fileNameTraining, numTrainingVecs,
+                     fileNameIndexing, numIndexingVecs, fileNameQueries,
+                     fileNameGroundTruth, numQueriesBegin, numQueriesEnd,
+                     nprobeBegin, nprobeEnd, kBegin, kEnd, usePrecomputed == 1,
+                     fileNameIndex);
+  } else {
+    demo_ivfpq<false>(d, nbitsCoarseQuantizer, numSubQuantizers,
+                      nbitsSubQuantizer, fileNameTraining, numTrainingVecs,
+                      fileNameIndexing, numIndexingVecs, fileNameQueries,
+                      fileNameGroundTruth, numQueriesBegin, numQueriesEnd,
+                      nprobeBegin, nprobeEnd, kBegin, kEnd, usePrecomputed == 1,
+                      fileNameIndex);
+  }
+  return 0;
+}
