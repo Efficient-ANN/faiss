@@ -37,7 +37,8 @@ void search(faiss::gpu::StandardGpuResources *res, faiss::Index *index,
     tStart = clock();
     index->search(numQueries, queries, k, outDistances.data(),
                   outLabels.data());
-    faiss::gpu::CudaEvent copyEnd(res->getDefaultStreamCurrentDevice());
+    faiss::gpu::CudaEvent copyEnd(
+        res->getResources()->getDefaultStreamCurrentDevice());
     copyEnd.cpuWaitOnEvent();
     tEnd = clock();
     tGpu = (double)(tEnd - tStart) / CLOCKS_PER_SEC;
@@ -129,13 +130,15 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
       }
       assert(d == readedDim);
       imipqGpu.updateExpectedNumAddsPerList(currentNumVecsTile, indexingVecs);
-      faiss::gpu::CudaEvent updateEnd(res.getDefaultStreamCurrentDevice());
+      faiss::gpu::CudaEvent updateEnd(
+          res.getResources()->getDefaultStreamCurrentDevice());
       updateEnd.cpuWaitOnEvent();
       delete indexingVecs;
     }
 
     imipqGpu.applyExpectedNumAddsPerList();
-    faiss::gpu::CudaEvent applyEnd(res.getDefaultStreamCurrentDevice());
+    faiss::gpu::CudaEvent applyEnd(
+        res.getResources()->getDefaultStreamCurrentDevice());
     applyEnd.cpuWaitOnEvent();
     tEnd = clock();
     tGpu = (double)(tEnd - tStart) / CLOCKS_PER_SEC;

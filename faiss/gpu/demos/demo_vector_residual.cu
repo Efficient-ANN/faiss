@@ -43,8 +43,10 @@ void demoVectorResidual(int numOfQueries, int d, int multiIndexCodebookSize) {
   int device = 0;
   cudaStream_t stream =
       provider.getResources()->getDefaultStreamCurrentDevice();
-  faiss::gpu::DeviceTensor<float, 2, true> outResiduals({numOfQueries, d},
-                                                        space);
+  faiss::gpu::DeviceTensor<float, 2, true> outResiduals(
+      provider.getResources().get(),
+      faiss::gpu::makeTempAlloc(faiss::gpu::AllocType::Other, stream),
+      {numOfQueries, d});
   std::vector<float> residuals(numOfQueries * d);
   std::vector<float> queries(numOfQueries * d);
 

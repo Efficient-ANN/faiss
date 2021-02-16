@@ -13,7 +13,7 @@
 
 void merge(int k, float *firstDistances, int *firstLabels,
            float *secondDistances, int *secondLabels, float *mergedDistances,
-           int *mergedLabels) {
+           int *mergedLabels, int labelsOffset) {
   int i = 0;
   int j = 0;
   for (int currentK = 0; currentK < k; currentK++) {
@@ -34,20 +34,20 @@ void merge(int k, float *firstDistances, int *firstLabels,
 void mergeKnn(int k, int kMax, int numVecs, int begin, int end,
               std::string inputFilePrefixDistances,
               std::string inputFilePrefixLabels,
-              std::string outputFilePrefixLabels) {
+              std::string outputFilePrefixLabels, const int batchSizeM) {
   if (begin <= 0) {
     return;
   }
+
+  const int batchSize = batchSizeM * 1000000;
 
   std::string inFileNameDistances, inFileNameLabels, outFileName;
   int readedK;
   float *firstDistances = nullptr;
   int *firstLabels = nullptr;
 
-  int i = 0;
-
-  inFileNameDistances = inputFilePrefixDistances + std::to_string(i) + ".fvecs";
-  inFileNameLabels = inputFilePrefixLabels + std::to_string(i) + ".ivecs";
+  inFileNameDistances = inputFilePrefixDistances + std::to_string(0) + ".fvecs";
+  inFileNameLabels = inputFilePrefixLabels + std::to_string(0) + ".ivecs";
 
   firstDistances =
       faiss::fvecs_read(inFileNameDistances.c_str(), numVecs, 0, &readedK);
@@ -57,11 +57,11 @@ void mergeKnn(int k, int kMax, int numVecs, int begin, int end,
       faiss::ivecs_read(inFileNameLabels.c_str(), numVecs, 0, &readedK);
   assert(kMax == readedK);
 
-  outFileName = outputFilePrefixLabels + std::to_string(i) + ".ivecs";
+  outFileName = outputFilePrefixLabels + std::to_string(batchSizeM) + "M.ivecs";
 
   faiss::ivecs_write(outFileName.c_str(), numVecs, k, firstLabels);
 
-  for (; i < end; i++) {
+  for (int i = 1; i < end; i++) {
     float *secondDistances = nullptr;
     int *secondLabels = nullptr;
     float *mergedDistances = nullptr;
@@ -70,10 +70,9 @@ void mergeKnn(int k, int kMax, int numVecs, int begin, int end,
     inFileNameDistances =
         inputFilePrefixDistances + std::to_string(i) + ".fvecs";
     inFileNameLabels = inputFilePrefixLabels + std::to_string(i) + ".ivecs";
-
-    float *secondDistances =
+    secondDistances =
         faiss::fvecs_read(inFileNameDistances.c_str(), numVecs, 0, &readedK);
-    int *secondLabels =
+    secondLabels =
         faiss::ivecs_read(inFileNameLabels.c_str(), numVecs, 0, &readedK);
 
     mergedDistances = new float[k * numVecs];
@@ -83,11 +82,12 @@ void mergeKnn(int k, int kMax, int numVecs, int begin, int end,
     for (int j = 0; j < numVecs; j++) {
       merge(k, firstDistances + j * k, firstLabels + j * k,
             secondDistances + j * k, secondLabels + j * k,
-            mergedDistances + j * k, mergedLabels + j * k);
+            mergedDistances + j * k, mergedLabels + j * k, batchSize * i);
     }
 
     if (i >= begin) {
-      outFileName = outputFilePrefixLabels + std::to_string(i) + ".ivecs";
+      outFileName = outputFilePrefixLabels +
+                    std::to_string(batchSizeM * (i + 1)) + "M.ivecs";
       faiss::ivecs_write(outFileName.c_str(), numVecs, k, mergedLabels);
     }
 
@@ -105,7 +105,13 @@ void mergeKnn(int k, int kMax, int numVecs, int begin, int end,
 }
 
 int main(int argc, char **argv) {
-  int k, kMax, numVecs, begin, end, numThreads;
+
+  if (argc <= 9) {
+    std::cout << "There must be 9 or more parameters" << std::endl;
+    return 1;
+  }
+
+  int k, kMax, numVecs, begin, end, numThreads, batchSizeM;
   std::string inputFilePrefixDistances, inputFilePrefixLabels,
       outputFilePrefixLabels;
 
@@ -117,12 +123,13 @@ int main(int argc, char **argv) {
   inputFilePrefixDistances = argv[6];
   inputFilePrefixLabels = argv[7];
   outputFilePrefixLabels = argv[8];
-  numThreads = argc > 9 ? std::stoi(argv[9]) : 1;
+  batchSizeM = std::stoi(argv[9]);
+  numThreads = argc > 10 ? std::stoi(argv[10]) : 1;
 
   omp_set_num_threads(numThreads);
 
   mergeKnn(k, kMax, numVecs, begin, end, inputFilePrefixDistances,
-           inputFilePrefixLabels, outputFilePrefixLabels);
+           inputFilePrefixLabels, outputFilePrefixLabels, batchSizeM);
 
   return 0;
 }

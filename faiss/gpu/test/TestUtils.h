@@ -12,7 +12,6 @@
 #include <faiss/Index.h>
 #include <faiss/invlists/InvertedLists.h>
 #include <initializer_list>
-#include <gtest/gtest.h>
 #include <cstring>
 #include <memory>
 #include <string>

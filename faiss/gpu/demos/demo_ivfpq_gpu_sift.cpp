@@ -42,7 +42,8 @@ void search(faiss::gpu::StandardGpuResources *res, faiss::Index *index,
     tStart = clock();
     index->search(numQueries, queries, k, outDistances.data(),
                   outLabels.data());
-    faiss::gpu::CudaEvent copyEnd(res->getDefaultStreamCurrentDevice());
+    faiss::gpu::CudaEvent copyEnd(
+        res->getResources()->getDefaultStreamCurrentDevice());
     copyEnd.cpuWaitOnEvent();
     tEnd = clock();
     tGpu = (double)(tEnd - tStart) / CLOCKS_PER_SEC;

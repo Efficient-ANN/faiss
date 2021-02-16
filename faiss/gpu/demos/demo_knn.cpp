@@ -89,7 +89,8 @@ void knnOutOfMemory(int d, std::string fileNameIndexing, int numIndexingVecs,
       tStart = clock();
       index->search(numQueriesVecs, queries, k, outDistances.data(),
                     outLabels.data());
-      faiss::gpu::CudaEvent copyEnd(res->getDefaultStreamCurrentDevice());
+      faiss::gpu::CudaEvent copyEnd(
+          res->getResources()->getDefaultStreamCurrentDevice());
       copyEnd.cpuWaitOnEvent();
       tEnd = clock();
       duration = (double)(tEnd - tStart) / CLOCKS_PER_SEC;
