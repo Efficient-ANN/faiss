@@ -13,6 +13,7 @@
 #include <faiss/invlists/InvertedLists.h>
 #include <initializer_list>
 #include <cstring>
+#include <gtest/gtest.h>
 #include <memory>
 #include <string>
 #include <vector>
