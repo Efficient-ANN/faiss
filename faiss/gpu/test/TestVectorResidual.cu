@@ -19,20 +19,24 @@ void testRunCalcResidualMultiIndex2(int numOfQueries, int d, int codebookSize) {
   std::vector<float> centroids =
       faiss::gpu::randVecs(NUM_CODEBOOKS * codebookSize, d / NUM_CODEBOOKS);
 
-  faiss::gpu::StandardGpuResources resources;
+  faiss::gpu::StandardGpuResources provider;
   int device = 0;
-  cudaStream_t stream = resources.getDefaultStreamCurrentDevice();
+  cudaStream_t stream =
+      provider.getResources()->getDefaultStreamCurrentDevice();
 
   auto inQueries = faiss::gpu::toDeviceTemporary<float, 2>(
-      &resources, device, const_cast<float *>(queries.data()), stream,
+      provider.getResources().get(), device,
+      const_cast<float *>(queries.data()), stream,
       {NUM_CODEBOOKS * numOfQueries, d / NUM_CODEBOOKS});
 
   auto inCentroids = faiss::gpu::toDeviceTemporary<float, 2>(
-      &resources, device, const_cast<float *>(centroids.data()), stream,
+      provider.getResources().get(), device,
+      const_cast<float *>(centroids.data()), stream,
       {NUM_CODEBOOKS * codebookSize, d / NUM_CODEBOOKS});
 
   faiss::gpu::DeviceTensor<float, 2, true> outResiduals(
-      resources, makeTempAlloc(AllocType::Other, stream), {numOfQueries, d});
+      provider.getResources().get(),
+      faiss::gpu::makeTempAlloc(faiss::gpu::AllocType::Other, stream), {numOfQueries, d});
 
   std::vector<int> keyList = {0, (codebookSize - 1) / NUM_CODEBOOKS,
                               codebookSize - 1};
@@ -45,7 +49,8 @@ void testRunCalcResidualMultiIndex2(int numOfQueries, int d, int codebookSize) {
       }
 
       auto inKeys = faiss::gpu::toDeviceTemporary<ushort2, 1>(
-          &resources, device, (ushort2 *)(keys.data()), stream, {numOfQueries});
+          provider.getResources().get(), device, (ushort2 *)(keys.data()),
+          stream, {numOfQueries});
 
       faiss::gpu::runCalcResidual(inQueries, inCentroids, inKeys, outResiduals,
                                   stream);

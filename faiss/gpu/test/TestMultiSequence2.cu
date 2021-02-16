@@ -4,7 +4,7 @@
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  */
- 
+
 #include <algorithm>
 #include <faiss/Index.h>
 #include <faiss/gpu/StandardGpuResources.h>
@@ -67,26 +67,31 @@ void test(int w, int numOfQueries, unsigned short numCoarseDistances) {
                         &i2[(i + 1) * numCoarseDistances]);
   }
 
-  faiss::gpu::StandardGpuResources resources;
+  faiss::gpu::StandardGpuResources provider;
   int device = 0;
-  cudaStream_t stream = resources.getDefaultStreamCurrentDevice();
+  cudaStream_t stream =
+      provider.getResources()->getDefaultStreamCurrentDevice();
 
   auto inDistances = faiss::gpu::toDeviceTemporary<float, 3>(
-      &resources, device, const_cast<float *>(d), stream,
+      provider.getResources().get(), device, const_cast<float *>(d), stream,
       {NUM_CODEBOOKS, numOfQueries, numCoarseDistances});
 
   auto inIndices = faiss::gpu::toDeviceTemporary<T, 3>(
-      &resources, device, const_cast<T *>(ids), stream,
+      provider.getResources().get(), device, const_cast<T *>(ids), stream,
       {NUM_CODEBOOKS, numOfQueries, numCoarseDistances});
 
   faiss::gpu::DeviceTensor<float, 2, true> outDistances(
-      &resources, makeTempAlloc(AllocType::Other, stream), {numOfQueries, w});
+      provider.getResources().get(),
+      faiss::gpu::makeTempAlloc(faiss::gpu::AllocType::Other, stream),
+      {numOfQueries, w});
 
   faiss::gpu::DeviceTensor<TVec2, 2, true> outIndices(
-      &resources, makeTempAlloc(AllocType::Other, stream), {numOfQueries, w});
+      provider.getResources().get(),
+      faiss::gpu::makeTempAlloc(faiss::gpu::AllocType::Other, stream),
+      {numOfQueries, w});
 
   faiss::gpu::runMultiSequence2(w, inDistances, inIndices, outDistances,
-                                outIndices, &resources);
+                                outIndices, provider.getResources().get());
 
   float *dr;
   TVec2 *ir;
@@ -161,26 +166,32 @@ void testUnifiedIndex(int w, int numOfQueries,
                         &i2[(i + 1) * numCoarseDistances]);
   }
 
-  faiss::gpu::StandardGpuResources resources;
+  faiss::gpu::StandardGpuResources provider;
   int device = 0;
-  cudaStream_t stream = resources.getDefaultStreamCurrentDevice();
+  cudaStream_t stream =
+      provider.getResources()->getDefaultStreamCurrentDevice();
 
   auto inDistances = faiss::gpu::toDeviceTemporary<float, 3>(
-      &resources, device, const_cast<float *>(d), stream,
+      provider.getResources().get(), device, const_cast<float *>(d), stream,
       {NUM_CODEBOOKS, numOfQueries, numCoarseDistances});
 
   auto inIndices = faiss::gpu::toDeviceTemporary<T, 3>(
-      &resources, device, const_cast<T *>(ids), stream,
+      provider.getResources().get(), device, const_cast<T *>(ids), stream,
       {NUM_CODEBOOKS, numOfQueries, numCoarseDistances});
 
   faiss::gpu::DeviceTensor<float, 2, true> outDistances(
-      &resources, makeTempAlloc(AllocType::Other, stream), {numOfQueries, w});
+      provider.getResources().get(),
+      faiss::gpu::makeTempAlloc(faiss::gpu::AllocType::Other, stream),
+      {numOfQueries, w});
 
-  faiss::gpu::DeviceTensor<TVec2, 2, true> outIndices(
-      &resources, makeTempAlloc(AllocType::Other, stream), {numOfQueries, w});
+  faiss::gpu::DeviceTensor<faiss::Index::idx_t, 2, true> outIndices(
+      provider.getResources().get(),
+      faiss::gpu::makeTempAlloc(faiss::gpu::AllocType::Other, stream),
+      {numOfQueries, w});
 
   faiss::gpu::runMultiSequence2(w, inDistances, inIndices, outDistances,
-                                codebookSize, outIndices, &resources);
+                                codebookSize, outIndices,
+                                provider.getResources().get());
 
   float *dr;
   faiss::Index::idx_t *ir;

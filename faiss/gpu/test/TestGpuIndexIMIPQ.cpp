@@ -730,7 +730,7 @@ void testSearchPrecomputedCodes(int d, int numSubQuantizers, int bitsPerCode,
   }
 }
 
-TEST(TestGpuMultiIndex2, testGetNumLists) {
+TEST(TestGpuIndexIMIPQ, testGetNumLists) {
   constexpr int d = 2;
   constexpr int numSubQuantizers = 2;
   constexpr int bitsPerCode = 8;
@@ -745,33 +745,33 @@ TEST(TestGpuMultiIndex2, testGetNumLists) {
   }
 }
 
-TEST(TestGpuMultiIndex2, testAdd) {
+TEST(TestGpuIndexIMIPQ, testAdd) {
   int d, coarseCodebookSize, numSubQuantizers, bitsPerCode, numOfTrainingVecs;
   d = 4;
   coarseCodebookSize = 2;
   numSubQuantizers = 2;
-  bitsPerCode = 1;
+  bitsPerCode = 8;
   numOfTrainingVecs = (1 << bitsPerCode) * 39;
   testAdd(d, coarseCodebookSize, numSubQuantizers, bitsPerCode,
           numOfTrainingVecs);
 }
 
-TEST(TestGpuMultiIndex2, testPrecomputedCodes) {
+TEST(TestGpuIndexIMIPQ, testPrecomputedCodes) {
   int d, coarseCodebookSize, numSubQuantizers, bitsPerCode, numOfTrainingVecs;
   d = 4;
   coarseCodebookSize = 2;
   numSubQuantizers = 4;
-  bitsPerCode = 1;
+  bitsPerCode = 8;
   numOfTrainingVecs = (1 << bitsPerCode) * 39;
   testPrecomputedCodes(d, coarseCodebookSize, numSubQuantizers, bitsPerCode,
                        numOfTrainingVecs);
 }
 
-TEST(TestGpuMultiIndex2, testSearchPrecomputedCodes) {
+TEST(TestGpuIndexIMIPQ, testSearchPrecomputedCodes) {
   int d, numSubQuantizers, bitsPerCode;
   d = 4;
   numSubQuantizers = 4;
-  bitsPerCode = 1;
+  bitsPerCode = 8;
   testSearchPrecomputedCodes(d, numSubQuantizers, bitsPerCode);
 }
 
