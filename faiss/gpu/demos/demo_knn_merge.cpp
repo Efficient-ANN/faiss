@@ -25,7 +25,7 @@ void merge(int k, float *firstDistances, int *firstLabels,
       i++;
     } else {
       mergedDistances[currentK] = distance2;
-      mergedLabels[currentK] = secondLabels[j];
+      mergedLabels[currentK] = secondLabels[j] + labelsOffset;
       j++;
     }
   }
@@ -34,8 +34,9 @@ void merge(int k, float *firstDistances, int *firstLabels,
 void mergeKnn(int k, int kMax, int numVecs, int begin, int end,
               std::string inputFilePrefixDistances,
               std::string inputFilePrefixLabels,
+              std::string outputFilePrefixDistances,
               std::string outputFilePrefixLabels, const int batchSizeM) {
-  if (begin <= 0) {
+  if (begin < 0) {
     return;
   }
 
@@ -57,8 +58,11 @@ void mergeKnn(int k, int kMax, int numVecs, int begin, int end,
       faiss::ivecs_read(inFileNameLabels.c_str(), numVecs, 0, &readedK);
   assert(kMax == readedK);
 
-  outFileName = outputFilePrefixLabels + std::to_string(batchSizeM) + "M.ivecs";
+  outFileName =
+      outputFilePrefixDistances + std::to_string(batchSizeM) + "M.fvecs";
+  faiss::fvecs_write(outFileName.c_str(), numVecs, k, firstDistances);
 
+  outFileName = outputFilePrefixLabels + std::to_string(batchSizeM) + "M.ivecs";
   faiss::ivecs_write(outFileName.c_str(), numVecs, k, firstLabels);
 
   for (int i = 1; i < end; i++) {
@@ -78,17 +82,12 @@ void mergeKnn(int k, int kMax, int numVecs, int begin, int end,
     mergedDistances = new float[k * numVecs];
     mergedLabels = new int[k * numVecs];
 
+    int labelsOffset = batchSize * i;
 #pragma omp for
     for (int j = 0; j < numVecs; j++) {
       merge(k, firstDistances + j * k, firstLabels + j * k,
             secondDistances + j * k, secondLabels + j * k,
-            mergedDistances + j * k, mergedLabels + j * k, batchSize * i);
-    }
-
-    if (i >= begin) {
-      outFileName = outputFilePrefixLabels +
-                    std::to_string(batchSizeM * (i + 1)) + "M.ivecs";
-      faiss::ivecs_write(outFileName.c_str(), numVecs, k, mergedLabels);
+            mergedDistances + j * k, mergedLabels + j * k, labelsOffset);
     }
 
     delete[] firstDistances;
@@ -98,6 +97,16 @@ void mergeKnn(int k, int kMax, int numVecs, int begin, int end,
 
     firstDistances = mergedDistances;
     firstLabels = mergedLabels;
+
+    if (i >= begin) {
+      outFileName = outputFilePrefixDistances +
+                    std::to_string(batchSizeM * (i + 1)) + "M.fvecs";
+      faiss::fvecs_write(outFileName.c_str(), numVecs, k, firstDistances);
+
+      outFileName = outputFilePrefixLabels +
+                    std::to_string(batchSizeM * (i + 1)) + "M.ivecs";
+      faiss::ivecs_write(outFileName.c_str(), numVecs, k, firstLabels);
+    }
   }
 
   delete[] firstDistances;
@@ -106,14 +115,14 @@ void mergeKnn(int k, int kMax, int numVecs, int begin, int end,
 
 int main(int argc, char **argv) {
 
-  if (argc <= 9) {
-    std::cout << "There must be 9 or more parameters" << std::endl;
+  if (argc <= 10) {
+    std::cout << "There must be 10 or more parameters" << std::endl;
     return 1;
   }
 
   int k, kMax, numVecs, begin, end, numThreads, batchSizeM;
   std::string inputFilePrefixDistances, inputFilePrefixLabels,
-      outputFilePrefixLabels;
+      outputFilePrefixDistances, outputFilePrefixLabels;
 
   k = std::stoi(argv[1]);
   kMax = std::stoi(argv[2]);
@@ -122,14 +131,16 @@ int main(int argc, char **argv) {
   end = std::stoi(argv[5]);
   inputFilePrefixDistances = argv[6];
   inputFilePrefixLabels = argv[7];
-  outputFilePrefixLabels = argv[8];
-  batchSizeM = std::stoi(argv[9]);
-  numThreads = argc > 10 ? std::stoi(argv[10]) : 1;
+  outputFilePrefixDistances = argv[8];
+  outputFilePrefixLabels = argv[9];
+  batchSizeM = std::stoi(argv[10]);
+  numThreads = argc > 11 ? std::stoi(argv[11]) : 1;
 
   omp_set_num_threads(numThreads);
 
   mergeKnn(k, kMax, numVecs, begin, end, inputFilePrefixDistances,
-           inputFilePrefixLabels, outputFilePrefixLabels, batchSizeM);
+           inputFilePrefixLabels, outputFilePrefixDistances,
+           outputFilePrefixLabels, batchSizeM);
 
   return 0;
 }
