@@ -73,9 +73,10 @@ void demo_imipq(int d, int nbitsCoarseQuantizer, int numSubQuantizers,
                 int nbitsSubQuantizer, std::string fileNameTraining,
                 size_t numTrainingVecs, std::string fileNameIndexing,
                 size_t numIndexingVecs, std::string fileNameQueries,
-                std::string fileNameGroundTruth, int numQueriesBegin,
-                int numQueriesEnd, int nprobeBegin, int nprobeEnd, int kBegin,
-                int kEnd, std::string fileNameIndex) {
+                size_t queriesOffset, std::string fileNameGroundTruth,
+                int numQueriesBegin, int numQueriesEnd, int nprobeBegin,
+                int nprobeEnd, int kBegin, int kEnd,
+                std::string fileNameIndex) {
   int coarseCodebookSize = 1 << nbitsCoarseQuantizer;
   constexpr int NUM_COARSE_CODEBOOKS = 2;
   size_t nlist = coarseCodebookSize * coarseCodebookSize;
@@ -163,12 +164,12 @@ void demo_imipq(int d, int nbitsCoarseQuantizer, int numSubQuantizers,
   float *queries;
   if (isVecFloat) {
     queries = faiss::fvecs_read(fileNameQueries.c_str(),
-                                (size_t)numQueriesList[numQueriesEnd - 1], 0,
-                                &readedDim);
+                                (size_t)numQueriesList[numQueriesEnd - 1],
+                                queriesOffset, &readedDim);
   } else {
     queries = faiss::bvecs_read(fileNameQueries.c_str(),
-                                (size_t)numQueriesList[numQueriesEnd - 1], 0,
-                                &readedDim);
+                                (size_t)numQueriesList[numQueriesEnd - 1],
+                                queriesOffset, &readedDim);
   }
   assert(d == readedDim);
   int *groundTruth =
@@ -194,14 +195,14 @@ void demo_imipq(int d, int nbitsCoarseQuantizer, int numSubQuantizers,
 }
 
 int main(int argc, char **argv) {
-  if (argc <= 17) {
-    std::cout << "There must be 17 or more parameters" << std::endl;
+  if (argc <= 18) {
+    std::cout << "There must be 18 or more parameters" << std::endl;
     return 1;
   }
 
   int d, nbitsCoarseQuantizer, numSubQuantizers, nbitsSubQuantizer,
-      numQueriesBegin, numQueriesEnd, kBegin, kEnd, nprobeBegin, nprobeEnd,
-      isFloat, numThreads;
+      queriesOffset, numQueriesBegin, numQueriesEnd, kBegin, kEnd, nprobeBegin,
+      nprobeEnd, isFloat, numThreads;
   size_t numTrainingVecs, numIndexingVecs;
   std::string fileNameTraining, fileNameIndexing, fileNameQueries,
       fileNameGroundTruth, fileNameIndex;
@@ -215,34 +216,34 @@ int main(int argc, char **argv) {
   fileNameIndexing = argv[7];
   numIndexingVecs = std::stoul(argv[8]);
   fileNameQueries = argv[9];
-  fileNameGroundTruth = argv[10];
-  numQueriesBegin = std::stoi(argv[11]);
-  numQueriesEnd = std::stoi(argv[12]);
-  nprobeBegin = std::stoi(argv[13]);
-  nprobeEnd = std::stoi(argv[14]);
-  kBegin = std::stoi(argv[15]);
-  kEnd = std::stoi(argv[16]);
-  isFloat = std::stoi(argv[17]);
-  numThreads = argc > 18 ? std::stoi(argv[18]) : 1;
+  queriesOffset = std::stoul(argv[10]);
+  fileNameGroundTruth = argv[11];
+  numQueriesBegin = std::stoi(argv[12]);
+  numQueriesEnd = std::stoi(argv[13]);
+  nprobeBegin = std::stoi(argv[14]);
+  nprobeEnd = std::stoi(argv[15]);
+  kBegin = std::stoi(argv[16]);
+  kEnd = std::stoi(argv[17]);
+  isFloat = std::stoi(argv[18]);
+  numThreads = argc > 19 ? std::stoi(argv[19]) : 1;
   fileNameIndex = "";
-  // fileNameIndex = argc > 19 ? argv[19] : "";
 
   omp_set_num_threads(numThreads);
 
   std::cout << std::setprecision(6) << std::fixed;
 
   if (isFloat == 1) {
-    demo_imipq<true>(d, nbitsCoarseQuantizer, numSubQuantizers,
-                     nbitsSubQuantizer, fileNameTraining, numTrainingVecs,
-                     fileNameIndexing, numIndexingVecs, fileNameQueries,
-                     fileNameGroundTruth, numQueriesBegin, numQueriesEnd,
-                     nprobeBegin, nprobeEnd, kBegin, kEnd, fileNameIndex);
+    demo_imipq<true>(
+        d, nbitsCoarseQuantizer, numSubQuantizers, nbitsSubQuantizer,
+        fileNameTraining, numTrainingVecs, fileNameIndexing, numIndexingVecs,
+        fileNameQueries, queriesOffset, fileNameGroundTruth, numQueriesBegin,
+        numQueriesEnd, nprobeBegin, nprobeEnd, kBegin, kEnd, fileNameIndex);
   } else {
-    demo_imipq<false>(d, nbitsCoarseQuantizer, numSubQuantizers,
-                      nbitsSubQuantizer, fileNameTraining, numTrainingVecs,
-                      fileNameIndexing, numIndexingVecs, fileNameQueries,
-                      fileNameGroundTruth, numQueriesBegin, numQueriesEnd,
-                      nprobeBegin, nprobeEnd, kBegin, kEnd, fileNameIndex);
+    demo_imipq<false>(
+        d, nbitsCoarseQuantizer, numSubQuantizers, nbitsSubQuantizer,
+        fileNameTraining, numTrainingVecs, fileNameIndexing, numIndexingVecs,
+        fileNameQueries, queriesOffset, fileNameGroundTruth, numQueriesBegin,
+        numQueriesEnd, nprobeBegin, nprobeEnd, kBegin, kEnd, fileNameIndex);
   }
   return 0;
 }
