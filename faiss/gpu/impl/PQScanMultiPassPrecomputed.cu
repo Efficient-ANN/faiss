@@ -143,7 +143,8 @@ pqScanPrecomputedInterleaved(// (query id)(probe id)
   int laneId = threadIdx.x % kWarpSize;
   int warpId = threadIdx.x / kWarpSize;
 
-  auto numSubQuantizers = 2 * precompTerm2.getSize(2);
+  auto numSubQuantizersPerCodebook = precompTerm2.getSize(2);
+  auto numSubQuantizers = 2 * numSubQuantizersPerCodebook;
   auto codesPerSubQuantizer = precompTerm2.getSize(3);
 
   // This is where we start writing out data
@@ -177,25 +178,37 @@ pqScanPrecomputedInterleaved(// (query id)(probe id)
 
     auto term2Base = precompTerm2[listId2.x][0].data();
     auto term3Base = precompTerm3[queryId][0].data();
-    auto term2Base2 = precompTerm2[listId2.y][1].data();
-    auto term3Base2 = precompTerm3[queryId][1].data();
 
-    for (int sq = 0; sq < numSubQuantizers; ++sq) {
+    int sq = 0;
+    for (; sq < numSubQuantizersPerCodebook; ++sq) {
       EncodeT enc = WarpPackedBits<EncodeT, EncodeBits>::read(laneId, data);
       EncodeT code = WarpPackedBits<EncodeT, EncodeBits>::postRead(laneId, enc);
 
       dist += valid ?
         (ConvertTo<float>::to(term2Base[code]) +
-         ConvertTo<float>::to(term3Base[code]) +
-         ConvertTo<float>::to(term2Base2[code]) +
-         ConvertTo<float>::to(term3Base2[code])
+         ConvertTo<float>::to(term3Base[code])
         ) : 0;
 
       data += wordsPerVectorBlockDim;
       term2Base += codesPerSubQuantizer;
       term3Base += codesPerSubQuantizer;
-      term2Base2 += codesPerSubQuantizer;
-      term3Base2 += codesPerSubQuantizer;
+    }
+
+    term2Base = precompTerm2[listId2.y][1].data();
+    term3Base = precompTerm3[queryId][1].data();
+
+    for (; sq < numSubQuantizers; ++sq) {
+      EncodeT enc = WarpPackedBits<EncodeT, EncodeBits>::read(laneId, data);
+      EncodeT code = WarpPackedBits<EncodeT, EncodeBits>::postRead(laneId, enc);
+
+      dist += valid ?
+        (ConvertTo<float>::to(term2Base[code]) +
+         ConvertTo<float>::to(term3Base[code])
+        ) : 0;
+
+      data += wordsPerVectorBlockDim;
+      term2Base += codesPerSubQuantizer;
+      term3Base += codesPerSubQuantizer;
     }
 
     if (valid) {
