@@ -140,6 +140,7 @@ set(FAISS_HEADERS
   utils/simdlib_avx2.h
   utils/simdlib_emulated.h
   utils/utils.h
+  utils/vecs_storage.h
 )
 
 # Export FAISS_HEADERS variable to parent scope.

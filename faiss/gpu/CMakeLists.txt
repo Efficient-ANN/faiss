@@ -116,11 +116,14 @@ set(FAISS_GPU_HEADERS
   GpuIndex.h
   GpuIndexBinaryFlat.h
   GpuIndexFlat.h
+  GpuIndexIMI.h
+  GpuIndexIMIPQ.h
   GpuIndexIVF.h
   GpuIndexIVFFlat.h
   GpuIndexIVFPQ.h
   GpuIndexIVFScalarQuantizer.h
   GpuIndicesOptions.h
+  GpuMultiIndex2.h
   GpuResources.h
   StandardGpuResources.h
   impl/BinaryDistance.cuh
@@ -129,6 +132,9 @@ set(FAISS_GPU_HEADERS
   impl/Distance.cuh
   impl/DistanceUtils.cuh
   impl/FlatIndex.cuh
+  impl/IMIAppend.cuh
+  impl/IMIBase.cuh
+  impl/IMIPQ.cuh
   impl/GeneralDistance.cuh
   impl/GpuScalarQuantizer.cuh
   impl/IVFAppend.cuh
@@ -141,6 +147,7 @@ set(FAISS_GPU_HEADERS
   impl/InterleavedCodes.h
   impl/L2Norm.cuh
   impl/L2Select.cuh
+  impl/MultiIndex2.cuh
   impl/PQCodeDistances-inl.cuh
   impl/PQCodeDistances.cuh
   impl/PQCodeLoad.cuh
@@ -169,6 +176,8 @@ set(FAISS_GPU_HEADERS
   utils/MergeNetworkBlock.cuh
   utils/MergeNetworkUtils.cuh
   utils/MergeNetworkWarp.cuh
+  utils/MultiSequence.cuh
+  utils/MultiSequence-inl.cuh
   utils/NoTypeTensor.cuh
   utils/Pair.cuh
   utils/PtxUtils.cuh
