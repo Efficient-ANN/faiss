@@ -36,7 +36,8 @@ void testRunCalcResidualMultiIndex2(int numOfQueries, int d, int codebookSize) {
 
   faiss::gpu::DeviceTensor<float, 2, true> outResiduals(
       provider.getResources().get(),
-      faiss::gpu::makeTempAlloc(faiss::gpu::AllocType::Other, stream), {numOfQueries, d});
+      faiss::gpu::makeTempAlloc(faiss::gpu::AllocType::Other, stream),
+      {numOfQueries, d});
 
   std::vector<int> keyList = {0, (codebookSize - 1) / NUM_CODEBOOKS,
                               codebookSize - 1};
