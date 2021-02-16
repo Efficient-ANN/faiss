@@ -1,12 +1,21 @@
-#include <cstdlib>
+/**
+ * Copyright (c) Facebook, Inc. and its affiliates.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
 #include <faiss/utils/vecs_storage.h>
 #include <iostream>
+#include <random>
 #include <string>
 #include <sys/types.h>
 
-void fillWithRandom(float *array, int size) {
+void fillWithRandom(std::mt19937 &rng,
+                    std::uniform_real_distribution<> &distrib, float *array,
+                    int size) {
   for (int i = 0; i < size; i++) {
-    array[i] = drand48();
+    array[i] = distrib(rng) * 1000.;
   }
 }
 
@@ -44,8 +53,11 @@ int main(int argc, char **argv) {
     faiss::ivecs_write(fileName.c_str(), numVecs, dim, vecsToWrite);
     delete vecsToWrite;
   } else {
+    std::mt19937 rng;
+    std::uniform_real_distribution<> distrib;
+
     float *vecsToWrite = new float[numVecs * dim];
-    fillWithRandom(vecsToWrite, numVecs * dim);
+    fillWithRandom(rng, distrib, vecsToWrite, numVecs * dim);
     faiss::fvecs_write(fileName.c_str(), numVecs, dim, vecsToWrite);
     delete vecsToWrite;
   }

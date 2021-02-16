@@ -1,4 +1,10 @@
-#include <cstdlib>
+/**
+ * Copyright (c) Facebook, Inc. and its affiliates.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
 #include <faiss/utils/vecs_storage.h>
 #include <iostream>
 #include <string>
@@ -6,7 +12,8 @@
 
 int main(int argc, char **argv) {
   if (argc <= 5) {
-    std::cout << "params: <fileName> <numVecs> <numOffset> <dim> <type>" << std::endl;
+    std::cout << "params: <fileName> <numVecs> <numOffset> <dim> <type>"
+              << std::endl;
     return 1;
   }
 
@@ -22,7 +29,8 @@ int main(int argc, char **argv) {
 
   if (type == 0) {
     int readedDim;
-    float *vecs = faiss::bvecs_read(fileName.c_str(), numVecs, numOffset, &readedDim);
+    float *vecs =
+        faiss::bvecs_read(fileName.c_str(), numVecs, numOffset, &readedDim);
     std::cout << readedDim << std::endl;
     for (size_t i = 0; i < numVecs; i++) {
       size_t j = 0;
@@ -34,7 +42,8 @@ int main(int argc, char **argv) {
     delete vecs;
   } else if (type == 1) {
     int readedDim;
-    int *vecs = faiss::ivecs_read(fileName.c_str(), numVecs, numOffset, &readedDim);
+    int *vecs =
+        faiss::ivecs_read(fileName.c_str(), numVecs, numOffset, &readedDim);
     std::cout << readedDim << std::endl;
     for (size_t i = 0; i < numVecs; i++) {
       size_t j = 0;
@@ -46,7 +55,8 @@ int main(int argc, char **argv) {
     delete vecs;
   } else {
     int readedDim;
-    float *vecs = faiss::fvecs_read(fileName.c_str(), numVecs, numOffset, &readedDim);
+    float *vecs =
+        faiss::fvecs_read(fileName.c_str(), numVecs, numOffset, &readedDim);
     std::cout << readedDim << std::endl;
     for (size_t i = 0; i < numVecs; i++) {
       size_t j = 0;

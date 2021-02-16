@@ -21,11 +21,5 @@ target_link_libraries(demo_knn_merge PRIVATE faiss CUDA::cudart)
 add_executable(demo_knn EXCLUDE_FROM_ALL demo_knn.cpp)
 target_link_libraries(demo_knn PRIVATE faiss CUDA::cudart)
 
-add_executable(demo_vecs_read EXCLUDE_FROM_ALL demo_vecs_read.cpp)
-target_link_libraries(demo_vecs_read PRIVATE faiss)
-
-add_executable(demo_vecs_write EXCLUDE_FROM_ALL demo_vecs_write.cpp)
-target_link_libraries(demo_vecs_write PRIVATE faiss)
-
 add_executable(demo_vector_residual EXCLUDE_FROM_ALL demo_vector_residual.cu)
 target_link_libraries(demo_vector_residual PRIVATE faiss CUDA::cudart)

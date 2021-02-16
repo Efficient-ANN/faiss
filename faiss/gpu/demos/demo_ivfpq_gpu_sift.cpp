@@ -1,3 +1,10 @@
+/**
+ * Copyright (c) Facebook, Inc. and its affiliates.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
 #include <algorithm>
 #include <cassert>
 #include <cstdio>
@@ -177,7 +184,7 @@ void demo_ivfpq(int d, int nbitsCoarseQuantizer, int numSubQuantizers,
   int *groundTruth =
       faiss::ivecs_read(fileNameGroundTruth.c_str(),
                         numQueriesList[numQueriesEnd - 1], 0, &readedDim);
-  
+
   size_t devFree = 0;
   size_t devTotal = 0;
 

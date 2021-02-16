@@ -1,3 +1,10 @@
+/**
+ * Copyright (c) Facebook, Inc. and its affiliates.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
 #include <chrono>
 #include <cstdlib>
 #include <faiss/gpu/StandardGpuResources.h>
@@ -10,11 +17,14 @@
 #include <faiss/gpu/utils/StaticUtils.h>
 #include <iomanip>
 #include <iostream>
+#include <random>
 #include <string>
 
-void fillWithRandom(float *array, int size) {
+void fillWithRandom(std::mt19937 &rng,
+                    std::uniform_real_distribution<> &distrib, float *array,
+                    int size) {
   for (int i = 0; i < size; i++) {
-    array[i] = drand48();
+    array[i] = distrib(rng) * 1000.;
   }
 }
 
@@ -22,20 +32,23 @@ void demoVectorResidual(int numOfQueries, int d, int multiIndexCodebookSize) {
   FAISS_ASSERT(d > 0 && d % 2 == 0);
   FAISS_ASSERT(multiIndexCodebookSize > 0);
 
-  constexpr int NUM_CODEBOOKS = 2;
-  faiss::gpu::StandardGpuResources resources;
+  std::mt19937 rng;
+  std::uniform_real_distribution<> distrib;
 
-  resources.noTempMemory();
+  constexpr int NUM_CODEBOOKS = 2;
+  faiss::gpu::StandardGpuResources provider;
+
+  // provider.getResources()->noTempMemory();
 
   int device = 0;
-  cudaStream_t stream = resources.getDefaultStreamCurrentDevice();
-  faiss::gpu::MemorySpace space = faiss::gpu::MemorySpace::Device;
+  cudaStream_t stream =
+      provider.getResources()->getDefaultStreamCurrentDevice();
   faiss::gpu::DeviceTensor<float, 2, true> outResiduals({numOfQueries, d},
                                                         space);
   std::vector<float> residuals(numOfQueries * d);
   std::vector<float> queries(numOfQueries * d);
 
-  fillWithRandom(queries.data(), queries.size());
+  fillWithRandom(rng, distrib, queries.data(), queries.size());
 
   std::chrono::steady_clock::time_point start, end;
   std::chrono::duration<double> duration;
@@ -43,16 +56,17 @@ void demoVectorResidual(int numOfQueries, int d, int multiIndexCodebookSize) {
   std::cout << std::setprecision(6) << std::fixed;
   { // computing residual flat-index
 
-    auto inQueries = faiss::gpu::toDevice<float, 2>(
-        &resources, device, const_cast<float *>(queries.data()), stream,
-        {numOfQueries, d});
+    auto inQueries = faiss::gpu::toDeviceTemporary<float, 2>(
+        provider.getResources().get(), device,
+        const_cast<float *>(queries.data()), stream, {numOfQueries, d});
     int flatIndexCodebookSize = multiIndexCodebookSize * multiIndexCodebookSize;
     std::vector<float> centroidsFlat(flatIndexCodebookSize * d);
 
-    fillWithRandom(centroidsFlat.data(), centroidsFlat.size());
+    fillWithRandom(rng, distrib, centroidsFlat.data(), centroidsFlat.size());
 
-    auto inCentroidsFlat = faiss::gpu::toDevice<float, 2>(
-        &resources, device, const_cast<float *>(centroidsFlat.data()), stream,
+    auto inCentroidsFlat = faiss::gpu::toDeviceTemporary<float, 2>(
+        provider.getResources().get(), device,
+        const_cast<float *>(centroidsFlat.data()), stream,
         {flatIndexCodebookSize, d});
     std::vector<int> keys(numOfQueries);
 
@@ -60,9 +74,9 @@ void demoVectorResidual(int numOfQueries, int d, int multiIndexCodebookSize) {
       keys[i] = rand() % flatIndexCodebookSize;
     }
 
-    auto inKeys = faiss::gpu::toDevice<int, 1>(&resources, device,
-                                               const_cast<int *>(keys.data()),
-                                               stream, {(int)keys.size()});
+    auto inKeys = faiss::gpu::toDeviceTemporary<int, 1>(
+        provider.getResources().get(), device, const_cast<int *>(keys.data()),
+        stream, {(int)keys.size()});
 
     start = std::chrono::steady_clock::now();
     faiss::gpu::runCalcResidual(inQueries, inCentroidsFlat, inKeys,
@@ -80,16 +94,18 @@ void demoVectorResidual(int numOfQueries, int d, int multiIndexCodebookSize) {
 
   { // computing residual multi-index
 
-    auto inQueries = faiss::gpu::toDevice<float, 2>(
-        &resources, device, const_cast<float *>(queries.data()), stream,
+    auto inQueries = faiss::gpu::toDeviceTemporary<float, 2>(
+        provider.getResources().get(), device,
+        const_cast<float *>(queries.data()), stream,
         {NUM_CODEBOOKS * numOfQueries, d / NUM_CODEBOOKS});
     std::vector<float> centroidsMulti(NUM_CODEBOOKS * multiIndexCodebookSize *
                                       d / NUM_CODEBOOKS);
 
-    fillWithRandom(centroidsMulti.data(), centroidsMulti.size());
+    fillWithRandom(rng, distrib, centroidsMulti.data(), centroidsMulti.size());
 
-    auto inCentroidsMulti = faiss::gpu::toDevice<float, 2>(
-        &resources, device, const_cast<float *>(centroidsMulti.data()), stream,
+    auto inCentroidsMulti = faiss::gpu::toDeviceTemporary<float, 2>(
+        provider.getResources().get(), device,
+        const_cast<float *>(centroidsMulti.data()), stream,
         {NUM_CODEBOOKS * multiIndexCodebookSize, d / NUM_CODEBOOKS});
 
     std::vector<std::pair<ushort, ushort>> keyPairs(numOfQueries);
@@ -99,9 +115,9 @@ void demoVectorResidual(int numOfQueries, int d, int multiIndexCodebookSize) {
       keyPairs[i].second = rand() % multiIndexCodebookSize;
     }
 
-    auto inKeyPairs = faiss::gpu::toDevice<ushort2, 1>(
-        &resources, device, (ushort2 *)(keyPairs.data()), stream,
-        {(int)keyPairs.size()});
+    auto inKeyPairs = faiss::gpu::toDeviceTemporary<ushort2, 1>(
+        provider.getResources().get(), device, (ushort2 *)(keyPairs.data()),
+        stream, {(int)keyPairs.size()});
 
     start = std::chrono::steady_clock::now();
     faiss::gpu::runCalcResidual(inQueries, inCentroidsMulti, inKeyPairs,

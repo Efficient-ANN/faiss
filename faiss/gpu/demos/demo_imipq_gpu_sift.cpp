@@ -1,3 +1,10 @@
+/**
+ * Copyright (c) Facebook, Inc. and its affiliates.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
 #include <algorithm>
 #include <cassert>
 #include <ctime>
@@ -105,7 +112,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
   }
 
   { // reserve
-    size_t maxAddTileSize = (size_t) 8 * 1024 * 1024 * 1024;
+    size_t maxAddTileSize = (size_t)8 * 1024 * 1024 * 1024;
     size_t numVecsTile = maxAddTileSize / (d * sizeof(float));
     numVecsTile = std::min(numVecsTile, numIndexingVecs);
     numVecsTile = std::max(numVecsTile, (size_t)1);
@@ -137,7 +144,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
   }
 
   { // add
-    size_t maxAddTileSize = (size_t) 8 * 1024 * 1024 * 1024;
+    size_t maxAddTileSize = (size_t)8 * 1024 * 1024 * 1024;
     size_t numVecsTile = maxAddTileSize / (d * sizeof(float));
     numVecsTile = std::min(numVecsTile, numIndexingVecs);
     numVecsTile = std::max(numVecsTile, (size_t)1);
@@ -238,7 +245,7 @@ int main(int argc, char **argv) {
   omp_set_num_threads(numThreads);
 
   std::cout << std::setprecision(6) << std::fixed;
-  
+
   size_t devFree = 0;
   size_t devTotal = 0;
 

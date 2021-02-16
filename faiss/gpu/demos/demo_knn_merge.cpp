@@ -1,3 +1,10 @@
+/**
+ * Copyright (c) Facebook, Inc. and its affiliates.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
 #include <cassert>
 #include <faiss/utils/vecs_storage.h>
 #include <iostream>
@@ -71,7 +78,7 @@ void mergeKnn(int k, int kMax, int numVecs, int begin, int end,
 
     mergedDistances = new float[k * numVecs];
     mergedLabels = new int[k * numVecs];
-    
+
 #pragma omp for
     for (int j = 0; j < numVecs; j++) {
       merge(k, firstDistances + j * k, firstLabels + j * k,

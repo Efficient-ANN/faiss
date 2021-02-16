@@ -18,3 +18,9 @@ target_link_libraries(demo_sift1M PRIVATE faiss)
 
 add_executable(demo_weighted_kmeans EXCLUDE_FROM_ALL demo_weighted_kmeans.cpp)
 target_link_libraries(demo_weighted_kmeans PRIVATE faiss)
+
+add_executable(demo_vecs_read EXCLUDE_FROM_ALL demo_vecs_read.cpp)
+target_link_libraries(demo_vecs_read PRIVATE faiss)
+
+add_executable(demo_vecs_write EXCLUDE_FROM_ALL demo_vecs_write.cpp)
+target_link_libraries(demo_vecs_write PRIVATE faiss)
