@@ -4,13 +4,13 @@
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  */
- 
+
 #pragma once
 
 #include <faiss/Index.h>
+#include <faiss/gpu/GpuResources.h>
 #include <faiss/gpu/utils/DeviceTensor.cuh>
 #include <faiss/gpu/utils/DeviceVector.cuh>
-#include <faiss/gpu/GpuResources.h>
 
 namespace faiss {
 namespace gpu {
@@ -20,6 +20,10 @@ class GpuResources;
 class MultiIndex2 {
 public:
   MultiIndex2(GpuResources *res, int dim, MemorySpace space);
+
+  // numVecsTotal: NUM_CODEBOOKS * numCentroidsPerCodebook_
+  static size_t calcMemorySpaceSize(int numVecsTotal, int dimPerCodebook,
+                                    bool useFloat16);
 
   bool getUseFloat16() const;
 

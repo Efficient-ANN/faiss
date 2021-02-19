@@ -72,9 +72,19 @@ StandardGpuResourcesImpl::StandardGpuResourcesImpl() :
     // in a huge value that will then be adjusted
     tempMemSize_(getDefaultTempMemForGPU(-1,
                                          std::numeric_limits<size_t>::max())),
+    fixedMemSize_(0),
     pinnedMemSize_(kDefaultPinnedMemoryAllocation),
     allocLogging_(false) {
 }
+
+StandardGpuResourcesImpl::StandardGpuResourcesImpl(size_t fixedMemSize)
+    : pinnedMemAlloc_(nullptr), pinnedMemAllocSize_(0),
+      // let the adjustment function determine the memory size for us by passing
+      // in a huge value that will then be adjusted
+      tempMemSize_(
+          getDefaultTempMemForGPU(-1, std::numeric_limits<size_t>::max())),
+      fixedMemSize_(fixedMemSize),
+      pinnedMemSize_(kDefaultPinnedMemoryAllocation), allocLogging_(false) {}
 
 StandardGpuResourcesImpl::~StandardGpuResourcesImpl() {
   // The temporary memory allocator has allocated memory through us, so clean
@@ -355,6 +365,12 @@ StandardGpuResourcesImpl::initializeForDevice(int device) {
                           getDefaultTempMemForGPU(device, tempMemSize_)));
 
   tempMemory_.emplace(device, std::move(mem));
+
+  FAISS_ASSERT(fixedMemory_.count(device) == 0);
+  auto fixedMem = std::unique_ptr<FixedDeviceMemory>(
+      new FixedDeviceMemory(this, device, fixedMemSize_));
+
+  fixedMemory_.emplace(device, std::move(fixedMem));
 }
 
 cublasHandle_t
@@ -475,6 +491,22 @@ StandardGpuResourcesImpl::allocMemory(const AllocRequest& req) {
 
       FAISS_THROW_IF_NOT_FMT(err == cudaSuccess, "%s", str.c_str());
     }
+  } else if(adjReq.space == MemorySpace::Fixed){
+    p = fixedMemory_[adjReq.device]->allocMemory(adjReq.size);
+
+    if(p == nullptr){
+      // We need to allocate this ourselves
+      AllocRequest newReq = adjReq;
+      newReq.space = MemorySpace::Device;
+      newReq.type = AllocType::FixedMemoryOverflow;
+
+      if (allocLogging_) {
+        std::cout << "StandardGpuResources: alloc fail " << adjReq.toString()
+                  << " (no fixed space); retrying as MemorySpace::Device\n";
+      }
+
+      return allocMemory(newReq);
+    }
   } else {
     FAISS_ASSERT_FMT(false, "unknown MemorySpace %d", (int) adjReq.space);
   }
@@ -516,7 +548,8 @@ StandardGpuResourcesImpl::deallocMemory(int device, void* p) {
     FAISS_ASSERT_FMT(err == cudaSuccess,
                      "Failed to cudaFree pointer %p (error %d %s)",
                      p, (int) err, cudaGetErrorString(err));
-
+  } else if (req.space == MemorySpace::Fixed) {
+    // does not need to dealloc
   } else {
     FAISS_ASSERT_FMT(false, "unknown MemorySpace %d", (int) req.space);
   }
@@ -562,6 +595,9 @@ StandardGpuResourcesImpl::getMemoryInfo() const {
 StandardGpuResources::StandardGpuResources()
     : res_(new StandardGpuResourcesImpl) {
 }
+
+StandardGpuResources::StandardGpuResources(size_t fixedMemSize)
+    : res_(new StandardGpuResourcesImpl(fixedMemSize)) {}
 
 StandardGpuResources::~StandardGpuResources() {
 }

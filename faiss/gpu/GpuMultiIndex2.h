@@ -33,6 +33,9 @@ public:
 
   ~GpuMultiIndex2() override;
 
+  static size_t calcMemorySpaceSize(int numVecsTotal, int dimPerCodebook,
+                                    bool useFloat16);
+
   int toMultiIndex(std::pair<ushort, ushort> indexPair) const;
 
   int getCodebookSize();

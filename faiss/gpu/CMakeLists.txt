@@ -56,6 +56,7 @@ target_sources(faiss PRIVATE
   utils/BlockSelectFloat.cu
   utils/BlockSelectHalf.cu
   utils/DeviceUtils.cu
+  utils/FixedDeviceMemory.cpp
   utils/MultiSequence.cu
   utils/StackDeviceMemory.cpp
   utils/Timer.cpp
@@ -165,6 +166,7 @@ set(FAISS_GPU_HEADERS
   utils/DeviceTensor.cuh
   utils/DeviceUtils.h
   utils/DeviceVector.cuh
+  utils/FixedDeviceMemory.h
   utils/Float16.cuh
   utils/HostTensor-inl.cuh
   utils/HostTensor.cuh

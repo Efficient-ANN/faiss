@@ -57,6 +57,12 @@ GpuMultiIndex2::GpuMultiIndex2(std::shared_ptr<GpuResources> resources,
 
 GpuMultiIndex2::~GpuMultiIndex2() {}
 
+size_t GpuMultiIndex2::calcMemorySpaceSize(int numVecsTotal, int dimPerCodebook,
+                                           bool useFloat16) {
+  return MultiIndex2::calcMemorySpaceSize(dimPerCodebook, dimPerCodebook,
+                                          useFloat16);
+}
+
 int GpuMultiIndex2::toMultiIndex(std::pair<ushort, ushort> indexPair) const {
   ushort2 *indexPairUshort2 = (ushort2 *)&indexPair;
   return this->data_->toMultiIndex(*indexPairUshort2);

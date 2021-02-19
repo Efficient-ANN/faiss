@@ -80,10 +80,16 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
                 size_t queriesOffset, std::string fileNameGroundTruth,
                 int numQueriesBegin, int numQueriesEnd, int nprobeBegin,
                 int nprobeEnd, int kBegin, int kEnd) {
-  faiss::gpu::StandardGpuResources res;
+  size_t fixedMemSize = faiss::gpu::GpuIndexIMIPQ::calcMemorySpaceSize(
+      coarseCodebookSize * 2, d, false, numIndexingVecs, numSubQuantizers,
+      nbitsSubQuantizer, false, faiss::gpu::INDICES_32_BIT);
+  faiss::gpu::StandardGpuResources res(fixedMemSize);
   faiss::gpu::GpuIndexIMIPQConfig config;
 
+  std::cout << "fixedMemSize:" << fixedMemSize << std::endl;
+
   // res.noTempMemory();
+  config.memorySpace = faiss::gpu::MemorySpace::Fixed;
   config.indicesOptions = faiss::gpu::INDICES_32_BIT;
   config.usePrecomputedTables = true;
   faiss::gpu::GpuIndexIMIPQ imipqGpu(

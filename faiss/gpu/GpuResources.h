@@ -54,6 +54,8 @@ enum AllocType {
   /// to calling cudaMalloc which are sized to just the request at hand. These
   /// "overflow" temporary allocations are marked with this AllocType.
   TemporaryMemoryOverflow = 11,
+
+  FixedMemoryOverflow = 12,
 };
 
 /// Convert an AllocType to string
@@ -71,6 +73,9 @@ enum MemorySpace {
 
   /// Managed using cudaMallocManaged/cudaFree (typical Unified CPU/GPU memory)
   Unified = 2,
+
+  /// Fixed device memory reserved to fixed inverted lists
+  Fixed = 3,
 };
 
 /// Convert a MemorySpace to string
@@ -123,6 +128,9 @@ AllocInfo makeDevAlloc(AllocType at, cudaStream_t st);
 
 /// Create an AllocInfo for the current device with MemorySpace::Temporary
 AllocInfo makeTempAlloc(AllocType at, cudaStream_t st);
+
+/// Create an AllocInfo for the current device with MemorySpace::Fixed
+AllocInfo makeFixedAlloc(AllocType at, cudaStream_t st);
 
 /// Create an AllocInfo for the current device
 AllocInfo makeSpaceAlloc(AllocType at, MemorySpace sp, cudaStream_t st);

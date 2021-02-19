@@ -61,6 +61,13 @@ public:
 
   ~GpuIndexIMIPQ() override;
 
+  static size_t calcMemorySpaceSize(int numTotalVecsCoarseQuantizer,
+                                    int dimPerCodebook, bool useFloat16,
+                                    int numVecs, int numSubQuantizers,
+                                    int bitsPerSubQuantizer,
+                                    bool interleavedLayout,
+                                    IndicesOptions options);
+
   void updateExpectedNumAddsPerList(Index::idx_t n, const float *x);
 
   void applyExpectedNumAddsPerList();

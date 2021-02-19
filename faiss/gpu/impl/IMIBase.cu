@@ -51,9 +51,9 @@ void IMIBase::reserveMemory(size_t numVecs) {
   if ((indicesOptions_ == INDICES_32_BIT) ||
       (indicesOptions_ == INDICES_64_BIT)) {
     // Reserve for index lists as well
-    size_t bytesPerIndexList =
-        vecsPerList *
-        (indicesOptions_ == INDICES_32_BIT ? sizeof(int) : sizeof(long));
+    size_t bytesPerIndexList = vecsPerList * (indicesOptions_ == INDICES_32_BIT
+                                                  ? sizeof(int)
+                                                  : sizeof(Index::idx_t));
 
     for (auto &list : deviceListIndices_) {
       list->data.reserve(bytesPerIndexList, stream);
@@ -85,8 +85,9 @@ void IMIBase::reserveMemory(
     if ((indicesOptions_ == INDICES_32_BIT) ||
         (indicesOptions_ == INDICES_64_BIT)) {
       bytesPerIndexList =
-          expecetedNumAdds.second *
-          (indicesOptions_ == INDICES_32_BIT ? sizeof(int) : sizeof(long));
+          expecetedNumAdds.second * (indicesOptions_ == INDICES_32_BIT
+                                         ? sizeof(int)
+                                         : sizeof(Index::idx_t));
     }
     deviceListIndices_[expecetedNumAdds.first]->data.reserve(bytesPerIndexList,
                                                              stream);

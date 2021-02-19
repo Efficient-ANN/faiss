@@ -58,6 +58,13 @@ GpuIndexIMI::GpuIndexIMI(std::shared_ptr<GpuResources> resources, int dims,
 
 GpuIndexIMI::~GpuIndexIMI() { delete quantizer; }
 
+size_t GpuIndexIMI::calcMemorySpaceSizeCoarseQuantizer(int numVecsTotal,
+                                                       int dimPerCodebook,
+                                                       bool useFloat16) {
+  return GpuMultiIndex2::calcMemorySpaceSize(numVecsTotal, dimPerCodebook,
+                                             useFloat16);
+}
+
 GpuMultiIndex2 *GpuIndexIMI::getQuantizer() { return quantizer; }
 
 int GpuIndexIMI::getNumLists() const { return nlist; }

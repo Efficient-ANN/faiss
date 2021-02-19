@@ -26,6 +26,18 @@ MultiIndex2::MultiIndex2(GpuResources *res, int dim, MemorySpace space)
   FAISS_ASSERT(dim % numCodebooks_ == 0);
 }
 
+size_t MultiIndex2::calcMemorySpaceSize(int numVecsTotal, int dimPerCodebook,
+                                        bool useFloat16) {
+  const size_t normMemorySpaceSize = (size_t)numVecsTotal * sizeof(float);
+  if (!useFloat16) {
+    return (size_t)numVecsTotal * dimPerCodebook * sizeof(float) +
+           normMemorySpaceSize;
+  }
+
+  return (size_t)numVecsTotal * dimPerCodebook * sizeof(half) +
+         normMemorySpaceSize;
+}
+
 bool MultiIndex2::getUseFloat16() const { return false; }
 
 int MultiIndex2::getSize() const {

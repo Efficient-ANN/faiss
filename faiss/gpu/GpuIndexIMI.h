@@ -38,6 +38,10 @@ public:
 
   ~GpuIndexIMI() override;
 
+  static size_t calcMemorySpaceSizeCoarseQuantizer(int numVecsTotal,
+                                                   int dimPerCodebook,
+                                                   bool useFloat16);
+
   /// Returns the number of inverted lists we're managing
   int getNumLists() const;
 

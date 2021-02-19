@@ -28,6 +28,8 @@ std::string allocTypeToString(AllocType t) {
       return "TemporaryMemoryBuffer";
     case AllocType::TemporaryMemoryOverflow:
       return "TemporaryMemoryOverflow";
+    case AllocType::FixedMemoryOverflow:
+      return "FixedMemoryOverflow";
     default:
       return "Unknown";
   }
@@ -41,6 +43,8 @@ std::string memorySpaceToString(MemorySpace s) {
       return "Device";
     case MemorySpace::Unified:
       return "Unified";
+    case MemorySpace::Fixed:
+      return "Fixed";
     default:
       return "Unknown";
   }
@@ -71,6 +75,10 @@ AllocInfo makeDevAlloc(AllocType at, cudaStream_t st) {
 
 AllocInfo makeTempAlloc(AllocType at, cudaStream_t st) {
   return AllocInfo(at, getCurrentDevice(), MemorySpace::Temporary, st);
+}
+
+AllocInfo makeFixedAlloc(AllocType at, cudaStream_t st) {
+  return AllocInfo(at, getCurrentDevice(), MemorySpace::Fixed, st);
 }
 
 AllocInfo makeSpaceAlloc(AllocType at, MemorySpace sp, cudaStream_t st) {

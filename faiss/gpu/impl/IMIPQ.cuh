@@ -28,6 +28,11 @@ public:
 
   ~IMIPQ() override;
 
+  static size_t calcMemorySpaceSize(int numVecs, int numSubQuantizers,
+                                    int bitsPerSubQuantizer,
+                                    bool interleavedLayout,
+                                    IndicesOptions options);
+
   /// Enable or disable pre-computed codes
   void setPrecomputedCodes(bool enable);
 
@@ -55,6 +60,13 @@ public:
                     Tensor<float, 3, true> &term3);
 
 protected:
+  static size_t calcVectorsEncodingMemorySpaceSize(int numVecs,
+                                                   int numSubQuantizers,
+                                                   int bitsPerSubQuantizer,
+                                                   bool interleavedLayout);
+
+  static size_t calcIndicesMemorySpaceSize(int numVecs, IndicesOptions options);
+
   void runCalcTerm3(Tensor<float, 2, true> &queries, int &numQueries,
                     int &numSubQuantizersPerCodebook,
                     Tensor<float, 3, true> &term3);

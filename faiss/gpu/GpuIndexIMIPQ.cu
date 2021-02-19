@@ -48,6 +48,19 @@ GpuIndexIMIPQ::GpuIndexIMIPQ(std::shared_ptr<GpuResources> resources, int dims,
 
 GpuIndexIMIPQ::~GpuIndexIMIPQ() {}
 
+size_t GpuIndexIMIPQ::calcMemorySpaceSize(int numTotalVecsCoarseQuantizer,
+                                          int dimPerCodebook, bool useFloat16,
+                                          int numVecs, int numSubQuantizers,
+                                          int bitsPerSubQuantizer,
+                                          bool interleavedLayout,
+                                          IndicesOptions options) {
+  return GpuIndexIMI::calcMemorySpaceSizeCoarseQuantizer(
+             numTotalVecsCoarseQuantizer, dimPerCodebook, useFloat16) +
+         IMIPQ::calcMemorySpaceSize(numVecs, numSubQuantizers,
+                                    bitsPerSubQuantizer, interleavedLayout,
+                                    options);
+}
+
 void GpuIndexIMIPQ::updateExpectedNumAddsPerList(Index::idx_t n,
                                                  const float *x) {
   if (!expectedNumAddsPerList) {

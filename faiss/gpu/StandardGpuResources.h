@@ -9,6 +9,7 @@
 #pragma once
 
 #include <faiss/gpu/GpuResources.h>
+#include <faiss/gpu/utils/FixedDeviceMemory.h>
 #include <faiss/gpu/utils/StackDeviceMemory.h>
 #include <faiss/gpu/utils/DeviceUtils.h>
 #include <functional>
@@ -23,6 +24,8 @@ namespace faiss { namespace gpu {
 class StandardGpuResourcesImpl : public GpuResources {
  public:
   StandardGpuResourcesImpl();
+
+  StandardGpuResourcesImpl(size_t fixedMemSize);
 
   ~StandardGpuResourcesImpl() override;
 
@@ -108,6 +111,9 @@ class StandardGpuResourcesImpl : public GpuResources {
   /// Temporary memory provider, per each device
   std::unordered_map<int, std::unique_ptr<StackDeviceMemory>> tempMemory_;
 
+  /// Fixed memory provider, per each device
+  std::unordered_map<int, std::unique_ptr<FixedDeviceMemory>> fixedMemory_;
+
   /// Our default stream that work is ordered on, one per each device
   std::unordered_map<int, cudaStream_t> defaultStreams_;
 
@@ -132,6 +138,8 @@ class StandardGpuResourcesImpl : public GpuResources {
   /// devices
   size_t tempMemSize_;
 
+  size_t fixedMemSize_;
+
   /// Amount of pinned memory we should allocate
   size_t pinnedMemSize_;
 
@@ -146,6 +154,7 @@ class StandardGpuResourcesImpl : public GpuResources {
 class StandardGpuResources : public GpuResourcesProvider {
  public:
   StandardGpuResources();
+  StandardGpuResources(size_t fixedMemSize);
   ~StandardGpuResources() override;
 
   std::shared_ptr<GpuResources> getResources() override;
