@@ -81,7 +81,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
                 int numQueriesBegin, int numQueriesEnd, int nprobeBegin,
                 int nprobeEnd, int kBegin, int kEnd) {
   size_t fixedMemSize = faiss::gpu::GpuIndexIMIPQ::calcMemorySpaceSize(
-      coarseCodebookSize * 2, d, false, numIndexingVecs, numSubQuantizers,
+      coarseCodebookSize * 2, d / 2, false, numIndexingVecs, numSubQuantizers,
       nbitsSubQuantizer, false, faiss::gpu::INDICES_32_BIT);
   faiss::gpu::StandardGpuResources res(fixedMemSize);
   faiss::gpu::GpuIndexIMIPQConfig config;
@@ -90,6 +90,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
 
   // res.noTempMemory();
   config.memorySpace = faiss::gpu::MemorySpace::Fixed;
+  config.multiIndexConfig.memorySpace = faiss::gpu::MemorySpace::Fixed;
   config.indicesOptions = faiss::gpu::INDICES_32_BIT;
   config.usePrecomputedTables = true;
   faiss::gpu::GpuIndexIMIPQ imipqGpu(
@@ -151,6 +152,11 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
     std::cout << "IMIPQ reserve time on GPU: " << tGpu << std::endl;
     imipqGpu.resetExpectedNumAddsPerList();
   }
+
+  CUDA_VERIFY(cudaMemGetInfo(&devFree, &devTotal));
+  std::cout << "-------Memory-------" << std::endl;
+  std::cout << "Free: " << devFree << std::endl;
+  std::cout << "Total: " << devTotal << std::endl;
 
   { // add
     size_t maxAddTileSize = (size_t)8 * 1024 * 1024 * 1024;

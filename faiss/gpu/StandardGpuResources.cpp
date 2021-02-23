@@ -91,6 +91,8 @@ StandardGpuResourcesImpl::~StandardGpuResourcesImpl() {
   // that up before we finish fully de-initializing ourselves
   tempMemory_.clear();
 
+  fixedMemory_.clear();
+
   // Make sure all allocations have been freed
   bool allocError = false;
 
@@ -492,16 +494,16 @@ StandardGpuResourcesImpl::allocMemory(const AllocRequest& req) {
       FAISS_THROW_IF_NOT_FMT(err == cudaSuccess, "%s", str.c_str());
     }
   } else if(adjReq.space == MemorySpace::Fixed){
-    p = fixedMemory_[adjReq.device]->allocMemory(adjReq.size);
+    p = fixedMemory_[adjReq.device]->allocMemory(req.size);
 
     if(p == nullptr){
       // We need to allocate this ourselves
-      AllocRequest newReq = adjReq;
+      AllocRequest newReq = req;
       newReq.space = MemorySpace::Device;
       newReq.type = AllocType::FixedMemoryOverflow;
 
       if (allocLogging_) {
-        std::cout << "StandardGpuResources: alloc fail " << adjReq.toString()
+        std::cout << "StandardGpuResources: alloc fail " << req.toString()
                   << " (no fixed space); retrying as MemorySpace::Device\n";
       }
 

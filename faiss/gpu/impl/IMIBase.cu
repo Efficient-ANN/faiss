@@ -73,24 +73,24 @@ void IMIBase::reserveMemory(
 
   auto stream = resources_->getDefaultStreamCurrentDevice();
 
-  for (auto &expecetedNumAdds : *expectedNumAddsPerList) {
+  for (auto &expectedNumAdds : *expectedNumAddsPerList) {
     size_t bytesPerDataList =
-        getGpuVectorsEncodingSize_(expecetedNumAdds.second);
-    deviceListData_[expecetedNumAdds.first]->data.reserve(bytesPerDataList,
-                                                          stream);
+        getGpuVectorsEncodingSize_(expectedNumAdds.second);
+    deviceListData_[expectedNumAdds.first]->data.reserve(bytesPerDataList,
+                                                         stream);
   }
 
   size_t bytesPerIndexList;
-  for (auto &expecetedNumAdds : *expectedNumAddsPerList) {
+  for (auto &expectedNumAdds : *expectedNumAddsPerList) {
     if ((indicesOptions_ == INDICES_32_BIT) ||
         (indicesOptions_ == INDICES_64_BIT)) {
       bytesPerIndexList =
-          expecetedNumAdds.second * (indicesOptions_ == INDICES_32_BIT
-                                         ? sizeof(int)
-                                         : sizeof(Index::idx_t));
+          expectedNumAdds.second * (indicesOptions_ == INDICES_32_BIT
+                                        ? sizeof(int)
+                                        : sizeof(Index::idx_t));
     }
-    deviceListIndices_[expecetedNumAdds.first]->data.reserve(bytesPerIndexList,
-                                                             stream);
+    deviceListIndices_[expectedNumAdds.first]->data.reserve(bytesPerIndexList,
+                                                            stream);
   }
 
   // Update device info for all lists, since the base pointers may

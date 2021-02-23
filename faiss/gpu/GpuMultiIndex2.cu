@@ -59,7 +59,7 @@ GpuMultiIndex2::~GpuMultiIndex2() {}
 
 size_t GpuMultiIndex2::calcMemorySpaceSize(int numVecsTotal, int dimPerCodebook,
                                            bool useFloat16) {
-  return MultiIndex2::calcMemorySpaceSize(dimPerCodebook, dimPerCodebook,
+  return MultiIndex2::calcMemorySpaceSize(numVecsTotal, dimPerCodebook,
                                           useFloat16);
 }
 
