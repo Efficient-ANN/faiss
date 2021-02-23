@@ -16,10 +16,10 @@ TVec *vecs_read(const char *fileName, size_t num, size_t numOffset, int *dim) {
     abort();
   }
 
-  size_t numReadedBytes;
+  size_t numElementsRead;
   int currentDimension;
-  numReadedBytes = fread(&currentDimension, sizeof(int), 1, f);
-  assert(numReadedBytes == 1 || !"could not read vector dimension");
+  numElementsRead = fread(&currentDimension, sizeof(int), 1, f);
+  assert(numElementsRead == 1 || !"could not read vector dimension");
   assert((currentDimension > 0 && currentDimension < 1000000) ||
          !"unreasonable dimension");
   struct stat st;
@@ -33,18 +33,18 @@ TVec *vecs_read(const char *fileName, size_t num, size_t numOffset, int *dim) {
   TVec *vecs = new TVec[num * currentDimension];
   *dim = currentDimension;
 
-  numReadedBytes = 0;
+  numElementsRead = 0;
   TLoad buffer[currentDimension];
   for (size_t i = 0; i < num; i++) {
-    numReadedBytes += fread(&currentDimension, sizeof(int), 1, f);
+    numElementsRead += fread(&currentDimension, sizeof(int), 1, f);
     assert((currentDimension == *dim) || !"weird dimension");
     TVec *currentVec = vecs + i * currentDimension;
 
     if (sizeof(TVec) == sizeof(TLoad)) {
-      numReadedBytes +=
+      numElementsRead +=
           fread(currentVec, sizeof(TLoad), (size_t)currentDimension, f);
     } else {
-      numReadedBytes +=
+      numElementsRead +=
           fread(buffer, sizeof(TLoad), (size_t)currentDimension, f);
       for (int j = 0; j < currentDimension; j++) {
         currentVec[j] = (TVec)buffer[j];
@@ -52,7 +52,7 @@ TVec *vecs_read(const char *fileName, size_t num, size_t numOffset, int *dim) {
     }
   }
   fclose(f);
-  assert(numReadedBytes == num * (currentDimension + 1) ||
+  assert(numElementsRead == num * (currentDimension + 1) ||
          !"could not read whole file");
   return vecs;
 }

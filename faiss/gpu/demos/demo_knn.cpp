@@ -27,7 +27,7 @@ void knnOutOfMemory(int d, std::string fileNameIndexing, int numIndexingVecs,
   faiss::Index *index;
   clock_t tStart, tEnd;
   double duration;
-  int batchSize, currentBatch, readedDim;
+  int batchSize, currentBatch, dRead;
 
   size_t devFree = 0;
   size_t devTotal = 0;
@@ -40,12 +40,12 @@ void knnOutOfMemory(int d, std::string fileNameIndexing, int numIndexingVecs,
   float *queries;
   if (isVecFloat) {
     queries = faiss::fvecs_read(fileNameQueries.c_str(), numQueriesVecs,
-                                (size_t)offset, &readedDim);
+                                (size_t)offset, &dRead);
   } else {
     queries = faiss::bvecs_read(fileNameQueries.c_str(), numQueriesVecs,
-                                (size_t)offset, &readedDim);
+                                (size_t)offset, &dRead);
   }
-  assert(d == readedDim);
+  assert(d == dRead);
 
   batchSize = 5000000;
   currentBatch = 0;
@@ -65,15 +65,13 @@ void knnOutOfMemory(int d, std::string fileNameIndexing, int numIndexingVecs,
     { // add
       float *indexingVecs;
       if (isVecFloat) {
-        indexingVecs =
-            faiss::fvecs_read(fileNameIndexing.c_str(), currentNumVecsTile,
-                              (size_t)i, &readedDim);
+        indexingVecs = faiss::fvecs_read(fileNameIndexing.c_str(),
+                                         currentNumVecsTile, (size_t)i, &dRead);
       } else {
-        indexingVecs =
-            faiss::bvecs_read(fileNameIndexing.c_str(), currentNumVecsTile,
-                              (size_t)i, &readedDim);
+        indexingVecs = faiss::bvecs_read(fileNameIndexing.c_str(),
+                                         currentNumVecsTile, (size_t)i, &dRead);
       }
-      assert(d == readedDim);
+      assert(d == dRead);
       tStart = clock();
       index->add(currentNumVecsTile, indexingVecs);
       tEnd = clock();

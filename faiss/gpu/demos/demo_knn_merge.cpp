@@ -43,7 +43,7 @@ void mergeKnn(int k, int kMax, int numVecs, int begin, int end,
   const int batchSize = batchSizeM * 1000000;
 
   std::string inFileNameDistances, inFileNameLabels, outFileName;
-  int readedK;
+  int kRead;
   float *firstDistances = nullptr;
   int *firstLabels = nullptr;
 
@@ -51,12 +51,11 @@ void mergeKnn(int k, int kMax, int numVecs, int begin, int end,
   inFileNameLabels = inputFilePrefixLabels + std::to_string(0) + ".ivecs";
 
   firstDistances =
-      faiss::fvecs_read(inFileNameDistances.c_str(), numVecs, 0, &readedK);
-  assert(kMax == readedK);
+      faiss::fvecs_read(inFileNameDistances.c_str(), numVecs, 0, &kRead);
+  assert(kMax == kRead);
 
-  firstLabels =
-      faiss::ivecs_read(inFileNameLabels.c_str(), numVecs, 0, &readedK);
-  assert(kMax == readedK);
+  firstLabels = faiss::ivecs_read(inFileNameLabels.c_str(), numVecs, 0, &kRead);
+  assert(kMax == kRead);
 
   outFileName =
       outputFilePrefixDistances + std::to_string(batchSizeM) + "M.fvecs";
@@ -75,9 +74,9 @@ void mergeKnn(int k, int kMax, int numVecs, int begin, int end,
         inputFilePrefixDistances + std::to_string(i) + ".fvecs";
     inFileNameLabels = inputFilePrefixLabels + std::to_string(i) + ".ivecs";
     secondDistances =
-        faiss::fvecs_read(inFileNameDistances.c_str(), numVecs, 0, &readedK);
+        faiss::fvecs_read(inFileNameDistances.c_str(), numVecs, 0, &kRead);
     secondLabels =
-        faiss::ivecs_read(inFileNameLabels.c_str(), numVecs, 0, &readedK);
+        faiss::ivecs_read(inFileNameLabels.c_str(), numVecs, 0, &kRead);
 
     mergedDistances = new float[k * numVecs];
     mergedLabels = new int[k * numVecs];

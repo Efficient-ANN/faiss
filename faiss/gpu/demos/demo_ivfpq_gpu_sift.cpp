@@ -96,7 +96,7 @@ void demo_ivfpq(int d, int nbitsCoarseQuantizer, int numSubQuantizers,
   faiss::gpu::GpuIndexIVFPQ *ivfpq;
   clock_t tStart, tEnd;
   double tGpu;
-  int readedDim;
+  int dRead;
 
   bool isLoadead = false;
 
@@ -123,12 +123,12 @@ void demo_ivfpq(int d, int nbitsCoarseQuantizer, int numSubQuantizers,
       float *trainingVecs;
       if (isVecFloat) {
         trainingVecs = faiss::fvecs_read(fileNameTraining.c_str(),
-                                         numTrainingVecs, 0, &readedDim);
+                                         numTrainingVecs, 0, &dRead);
       } else {
         trainingVecs = faiss::bvecs_read(fileNameTraining.c_str(),
-                                         numTrainingVecs, 0, &readedDim);
+                                         numTrainingVecs, 0, &dRead);
       }
-      assert(d == readedDim);
+      assert(d == dRead);
       tStart = clock();
       ivfpq->train(numTrainingVecs, trainingVecs);
       tEnd = clock();
@@ -147,12 +147,12 @@ void demo_ivfpq(int d, int nbitsCoarseQuantizer, int numSubQuantizers,
         float *indexingVecs;
         if (isVecFloat) {
           indexingVecs = faiss::fvecs_read(fileNameIndexing.c_str(),
-                                           currentNumVecsTile, i, &readedDim);
+                                           currentNumVecsTile, i, &dRead);
         } else {
           indexingVecs = faiss::bvecs_read(fileNameIndexing.c_str(),
-                                           currentNumVecsTile, i, &readedDim);
+                                           currentNumVecsTile, i, &dRead);
         }
-        assert(d == readedDim);
+        assert(d == dRead);
         tStart = clock();
         ivfpq->add(currentNumVecsTile, indexingVecs);
         tEnd = clock();
@@ -176,16 +176,16 @@ void demo_ivfpq(int d, int nbitsCoarseQuantizer, int numSubQuantizers,
   if (isVecFloat) {
     queries = faiss::fvecs_read(fileNameQueries.c_str(),
                                 (size_t)numQueriesList[numQueriesEnd - 1],
-                                queriesOffset, &readedDim);
+                                queriesOffset, &dRead);
   } else {
     queries = faiss::bvecs_read(fileNameQueries.c_str(),
                                 (size_t)numQueriesList[numQueriesEnd - 1],
-                                queriesOffset, &readedDim);
+                                queriesOffset, &dRead);
   }
-  assert(d == readedDim);
+  assert(d == dRead);
   int *groundTruth =
       faiss::ivecs_read(fileNameGroundTruth.c_str(),
-                        numQueriesList[numQueriesEnd - 1], 0, &readedDim);
+                        numQueriesList[numQueriesEnd - 1], 0, &dRead);
 
   size_t devFree = 0;
   size_t devTotal = 0;
@@ -206,7 +206,7 @@ void demo_ivfpq(int d, int nbitsCoarseQuantizer, int numSubQuantizers,
       std::cout << "nprobe: " << nprobe << "---------" << std::endl;
       ivfpq->setNumProbes(nprobe);
       search(&res, ivfpq, queries, groundTruth, numQueries, kBegin, kEnd,
-             readedDim);
+             dRead);
     }
   }
   delete queries;
