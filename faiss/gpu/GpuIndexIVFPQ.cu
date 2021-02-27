@@ -34,7 +34,7 @@ GpuIndexIVFPQ::GpuIndexIVFPQ(GpuResourcesProvider* provider,
     usePrecomputedTables_(config.usePrecomputedTables),
     subQuantizers_(0),
     bitsPerCode_(0),
-    reserveMemoryVecs_(0) {
+    reserveMemoryVecs_(0), expectedNumAddsPerList(nullptr) {
   copyFrom(index);
 }
 
@@ -56,7 +56,7 @@ GpuIndexIVFPQ::GpuIndexIVFPQ(GpuResourcesProvider* provider,
     usePrecomputedTables_(config.usePrecomputedTables),
     subQuantizers_(subQuantizers),
     bitsPerCode_(bitsPerCode),
-    reserveMemoryVecs_(0) {
+    reserveMemoryVecs_(0), expectedNumAddsPerList(nullptr) {
   verifySettings_();
 
   // We haven't trained ourselves, so don't construct the PQ index yet
@@ -64,6 +64,65 @@ GpuIndexIVFPQ::GpuIndexIVFPQ(GpuResourcesProvider* provider,
 }
 
 GpuIndexIVFPQ::~GpuIndexIVFPQ() {
+}
+
+size_t GpuIndexIVFPQ::calcInvListsMemorySpaceSize(int numVecs,
+                                                  int numSubQuantizers,
+                                                  int bitsPerSubQuantizer,
+                                                  bool interleavedLayout,
+                                                  IndicesOptions options) {
+  return IVFPQ::calcMemorySpaceSize(numVecs, numSubQuantizers,
+                                    bitsPerSubQuantizer, interleavedLayout,
+                                    options);
+}
+
+size_t GpuIndexIVFPQ::calcMemorySpaceSize(int numTotalVecsCoarseQuantizer,
+                                          int dimPerCodebook, bool useFloat16,
+                                          int numVecs, int numSubQuantizers,
+                                          int bitsPerSubQuantizer,
+                                          bool interleavedLayout,
+                                          IndicesOptions options) {
+  return GpuIndexIVF::calcMemorySpaceSizeCoarseQuantizer(
+             numTotalVecsCoarseQuantizer, dimPerCodebook, useFloat16) +
+         GpuIndexIVFPQ::calcInvListsMemorySpaceSize(numVecs, numSubQuantizers,
+                                                    bitsPerSubQuantizer,
+                                                    interleavedLayout, options);
+}
+
+void GpuIndexIVFPQ::updateExpectedNumAddsPerList(Index::idx_t n,
+                                                 const float *x) {
+  if (!expectedNumAddsPerList) {
+    expectedNumAddsPerList.reset(new std::unordered_map<int, int>());
+  }
+
+  std::vector<faiss::Index::idx_t> outLabels(n);
+
+  quantizer->assign(n, x, outLabels.data());
+
+  std::unordered_map<int, int>::iterator entry;
+  for (auto &label : outLabels) {
+    entry = expectedNumAddsPerList->find((int)label);
+    if (entry == expectedNumAddsPerList->end()) {
+      expectedNumAddsPerList->operator[]((int)label) = 1;
+    } else {
+      expectedNumAddsPerList->operator[]((int)label)++;
+    }
+  }
+}
+
+void GpuIndexIVFPQ::applyExpectedNumAddsPerList() {
+  if (expectedNumAddsPerList && index_) {
+    size_t numExpectedVecs = 0;
+    for (auto &expectedNumAdds : *expectedNumAddsPerList) {
+      numExpectedVecs += expectedNumAdds.second;
+    }
+    std::cout << "numExpectedVecs" << numExpectedVecs << std::endl;
+    index_->reserveMemory(expectedNumAddsPerList.get());
+  }
+}
+
+void GpuIndexIVFPQ::resetExpectedNumAddsPerList() {
+  expectedNumAddsPerList.reset(nullptr);
 }
 
 void

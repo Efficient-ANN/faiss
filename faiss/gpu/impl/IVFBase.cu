@@ -81,6 +81,39 @@ IVFBase::reserveMemory(size_t numVecs) {
   updateDeviceListInfo_(stream);
 }
 
+void IVFBase::reserveMemory(
+    const std::unordered_map<int, int> *expectedNumAddsPerList) {
+  if (!expectedNumAddsPerList || expectedNumAddsPerList->empty()) {
+    return;
+  }
+
+  auto stream = resources_->getDefaultStreamCurrentDevice();
+
+  for (auto &expectedNumAdds : *expectedNumAddsPerList) {
+    size_t bytesPerDataList =
+        getGpuVectorsEncodingSize_(expectedNumAdds.second);
+    deviceListData_[expectedNumAdds.first]->data.reserve(bytesPerDataList,
+                                                         stream);
+  }
+
+  size_t bytesPerIndexList;
+  for (auto &expectedNumAdds : *expectedNumAddsPerList) {
+    if ((indicesOptions_ == INDICES_32_BIT) ||
+        (indicesOptions_ == INDICES_64_BIT)) {
+      bytesPerIndexList =
+          expectedNumAdds.second * (indicesOptions_ == INDICES_32_BIT
+                                        ? sizeof(int)
+                                        : sizeof(Index::idx_t));
+    }
+    deviceListIndices_[expectedNumAdds.first]->data.reserve(bytesPerIndexList,
+                                                            stream);
+  }
+
+  // Update device info for all lists, since the base pointers may
+  // have changed
+  updateDeviceListInfo_(stream);
+}
+
 void
 IVFBase::reset() {
   deviceListData_.clear();

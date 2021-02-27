@@ -48,6 +48,16 @@ GpuIndexIMIPQ::GpuIndexIMIPQ(std::shared_ptr<GpuResources> resources, int dims,
 
 GpuIndexIMIPQ::~GpuIndexIMIPQ() {}
 
+size_t GpuIndexIMIPQ::calcInvListsMemorySpaceSize(int numVecs,
+                                                  int numSubQuantizers,
+                                                  int bitsPerSubQuantizer,
+                                                  bool interleavedLayout,
+                                                  IndicesOptions options) {
+  return IMIPQ::calcMemorySpaceSize(numVecs, numSubQuantizers,
+                                    bitsPerSubQuantizer, interleavedLayout,
+                                    options);
+}
+
 size_t GpuIndexIMIPQ::calcMemorySpaceSize(int numTotalVecsCoarseQuantizer,
                                           int dimPerCodebook, bool useFloat16,
                                           int numVecs, int numSubQuantizers,
@@ -56,9 +66,9 @@ size_t GpuIndexIMIPQ::calcMemorySpaceSize(int numTotalVecsCoarseQuantizer,
                                           IndicesOptions options) {
   return GpuIndexIMI::calcMemorySpaceSizeCoarseQuantizer(
              numTotalVecsCoarseQuantizer, dimPerCodebook, useFloat16) +
-         IMIPQ::calcMemorySpaceSize(numVecs, numSubQuantizers,
-                                    bitsPerSubQuantizer, interleavedLayout,
-                                    options);
+         GpuIndexIMIPQ::calcInvListsMemorySpaceSize(numVecs, numSubQuantizers,
+                                                    bitsPerSubQuantizer,
+                                                    interleavedLayout, options);
 }
 
 void GpuIndexIMIPQ::updateExpectedNumAddsPerList(Index::idx_t n,
@@ -83,7 +93,7 @@ void GpuIndexIMIPQ::updateExpectedNumAddsPerList(Index::idx_t n,
 }
 
 void GpuIndexIMIPQ::applyExpectedNumAddsPerList() {
-  if (expectedNumAddsPerList) {
+  if (expectedNumAddsPerList && index_) {
     size_t numExpectedVecs = 0;
     for (auto &expectedNumAdds : *expectedNumAddsPerList) {
       numExpectedVecs += expectedNumAdds.second;

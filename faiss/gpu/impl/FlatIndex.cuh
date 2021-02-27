@@ -26,6 +26,8 @@ class FlatIndex {
             bool storeTransposed,
             MemorySpace space);
 
+  static size_t calcMemorySpaceSize(int numVecs, int dims, bool useFloat16);
+
   /// Whether or not this flat index primarily stores data in float16
   bool getUseFloat16() const;
 

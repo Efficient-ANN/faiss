@@ -61,6 +61,11 @@ public:
 
   ~GpuIndexIMIPQ() override;
 
+  static size_t calcInvListsMemorySpaceSize(int numVecs, int numSubQuantizers,
+                                            int bitsPerSubQuantizer,
+                                            bool interleavedLayout,
+                                            IndicesOptions options);
+
   static size_t calcMemorySpaceSize(int numTotalVecsCoarseQuantizer,
                                     int dimPerCodebook, bool useFloat16,
                                     int numVecs, int numSubQuantizers,

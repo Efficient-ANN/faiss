@@ -71,6 +71,49 @@ IVFPQ::IVFPQ(GpuResources* resources,
 IVFPQ::~IVFPQ() {
 }
 
+size_t IVFPQ::calcVectorsEncodingMemorySpaceSize(int numVecs,
+                                                 int numSubQuantizers,
+                                                 int bitsPerSubQuantizer,
+                                                 bool interleavedLayout) {
+  if (interleavedLayout) {
+    // bits per PQ code
+    int bits = bitsPerSubQuantizer;
+
+    // bytes to encode a block of 32 vectors (single PQ code)
+    int bytesPerDimBlock = bits * 32 / 8;
+
+    // bytes to fully encode 32 vectors
+    int bytesPerBlock = bytesPerDimBlock * numSubQuantizers;
+
+    // number of blocks of 32 vectors we have
+    int numBlocks = utils::divUp(numVecs, 32);
+
+    // total size to encode numVecs
+    return bytesPerBlock * numBlocks;
+  } else {
+    return (size_t)numVecs * numSubQuantizers;
+  }
+}
+
+size_t IVFPQ::calcIndicesMemorySpaceSize(int numVecs, IndicesOptions options) {
+  if ((options == INDICES_32_BIT) || (options == INDICES_64_BIT)) {
+    return numVecs *
+           (options == INDICES_32_BIT ? sizeof(int) : sizeof(Index::idx_t));
+  }
+
+  return 0;
+}
+
+size_t IVFPQ::calcMemorySpaceSize(int numVecs, int numSubQuantizers,
+                                  int bitsPerSubQuantizer,
+                                  bool interleavedLayout,
+                                  IndicesOptions options) {
+  return calcVectorsEncodingMemorySpaceSize(numVecs, numSubQuantizers,
+                                            bitsPerSubQuantizer,
+                                            interleavedLayout) +
+         calcIndicesMemorySpaceSize(numVecs, options);
+}
+
 bool
 IVFPQ::isSupportedPQCodeLength(int size) {
   switch (size) {

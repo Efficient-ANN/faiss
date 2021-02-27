@@ -11,6 +11,7 @@
 #include <faiss/gpu/GpuIndexIVF.h>
 #include <faiss/impl/ProductQuantizer.h>
 #include <memory>
+#include <unordered_map>
 #include <vector>
 
 namespace faiss { struct IndexIVFPQ; }
@@ -71,6 +72,24 @@ class GpuIndexIVFPQ : public GpuIndexIVF {
                 GpuIndexIVFPQConfig config = GpuIndexIVFPQConfig());
 
   ~GpuIndexIVFPQ() override;
+
+  static size_t calcInvListsMemorySpaceSize(int numVecs, int numSubQuantizers,
+                                            int bitsPerSubQuantizer,
+                                            bool interleavedLayout,
+                                            IndicesOptions options);
+
+  static size_t calcMemorySpaceSize(int numTotalVecsCoarseQuantizer,
+                                    int dimPerCodebook, bool useFloat16,
+                                    int numVecs, int numSubQuantizers,
+                                    int bitsPerSubQuantizer,
+                                    bool interleavedLayout,
+                                    IndicesOptions options);
+
+  void updateExpectedNumAddsPerList(Index::idx_t n, const float *x);
+
+  void applyExpectedNumAddsPerList();
+
+  void resetExpectedNumAddsPerList();
 
   /// Reserve space on the GPU for the inverted lists for `num`
   /// vectors, assumed equally distributed among
@@ -167,6 +186,8 @@ class GpuIndexIVFPQ : public GpuIndexIVF {
 
   /// Desired inverted list memory reservation
   size_t reserveMemoryVecs_;
+
+  std::unique_ptr<std::unordered_map<int, int>> expectedNumAddsPerList;
 
   /// The product quantizer instance that we own; contains the
   /// inverted lists

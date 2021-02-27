@@ -78,7 +78,7 @@ void search(faiss::gpu::StandardGpuResources *res, faiss::Index *index,
 }
 
 template <bool isVecFloat>
-void demo_ivfpq(int d, int nbitsCoarseQuantizer, int numSubQuantizers,
+void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
                 int nbitsSubQuantizer, std::string fileNameTraining,
                 size_t numTrainingVecs, std::string fileNameIndexing,
                 size_t numIndexingVecs, std::string fileNameQueries,
@@ -86,17 +86,25 @@ void demo_ivfpq(int d, int nbitsCoarseQuantizer, int numSubQuantizers,
                 int numQueriesBegin, int numQueriesEnd, int nprobeBegin,
                 int nprobeEnd, int kBegin, int kEnd, bool usePrecomputed,
                 std::string fileNameIndex) {
-  int coarseCodebookSize = 1 << nbitsCoarseQuantizer;
-  faiss::gpu::StandardGpuResources res;
+  faiss::gpu::IndicesOptions indiceOptions = faiss::gpu::INDICES_32_BIT;
+  size_t fixedMemSize = faiss::gpu::GpuIndexIVFPQ::calcMemorySpaceSize(
+      coarseCodebookSize, d, false, numIndexingVecs, numSubQuantizers,
+      nbitsSubQuantizer, false, indiceOptions);
+
+  faiss::gpu::StandardGpuResources res(fixedMemSize);
   faiss::gpu::GpuIndexIVFPQConfig config;
   // res.noTempMemory();
-  config.indicesOptions = faiss::gpu::INDICES_32_BIT;
+  config.memorySpace = faiss::gpu::MemorySpace::Fixed;
+  config.flatConfig.memorySpace = faiss::gpu::MemorySpace::Fixed;
+  config.indicesOptions = indiceOptions;
   config.usePrecomputedTables = usePrecomputed;
   int nlist = coarseCodebookSize;
   faiss::gpu::GpuIndexIVFPQ *ivfpq;
   clock_t tStart, tEnd;
   double tGpu;
   int dRead;
+  size_t devFree = 0;
+  size_t devTotal = 0;
 
   bool isLoadead = false;
 
@@ -137,8 +145,52 @@ void demo_ivfpq(int d, int nbitsCoarseQuantizer, int numSubQuantizers,
       delete trainingVecs;
     }
 
+    CUDA_VERIFY(cudaMemGetInfo(&devFree, &devTotal));
+    std::cout << "-------Memory-------" << std::endl;
+    std::cout << "Free: " << devFree << std::endl;
+    std::cout << "Total: " << devTotal << std::endl;
+
+    { // reserve
+      size_t maxAddTileSize = (size_t)8 * 1024 * 1024 * 1024;
+      size_t numVecsTile = maxAddTileSize / (d * sizeof(float));
+      numVecsTile = std::min(numVecsTile, numIndexingVecs);
+      numVecsTile = std::max(numVecsTile, (size_t)1);
+      tStart = clock();
+      for (size_t i = 0; i < numIndexingVecs; i += numVecsTile) {
+        size_t currentNumVecsTile = std::min(numVecsTile, numIndexingVecs - i);
+        float *indexingVecs;
+        if (isVecFloat) {
+          indexingVecs = faiss::fvecs_read(fileNameIndexing.c_str(),
+                                           currentNumVecsTile, i, &dRead);
+        } else {
+          indexingVecs = faiss::bvecs_read(fileNameIndexing.c_str(),
+                                           currentNumVecsTile, i, &dRead);
+        }
+        assert(d == dRead);
+        ivfpq->updateExpectedNumAddsPerList(currentNumVecsTile, indexingVecs);
+        faiss::gpu::CudaEvent updateEnd(
+            res.getResources()->getDefaultStreamCurrentDevice());
+        updateEnd.cpuWaitOnEvent();
+        delete indexingVecs;
+      }
+
+      ivfpq->applyExpectedNumAddsPerList();
+      faiss::gpu::CudaEvent applyEnd(
+          res.getResources()->getDefaultStreamCurrentDevice());
+      applyEnd.cpuWaitOnEvent();
+      tEnd = clock();
+      tGpu = (double)(tEnd - tStart) / CLOCKS_PER_SEC;
+      std::cout << "IMIPQ reserve time on GPU: " << tGpu << std::endl;
+      ivfpq->resetExpectedNumAddsPerList();
+    }
+
+    CUDA_VERIFY(cudaMemGetInfo(&devFree, &devTotal));
+    std::cout << "-------Memory-------" << std::endl;
+    std::cout << "Free: " << devFree << std::endl;
+    std::cout << "Total: " << devTotal << std::endl;
+
     { // add
-      size_t maxAddTileSize = 512 * 1024 * 1024;
+      size_t maxAddTileSize = (size_t)8 * 1024 * 1024 * 1024;
       size_t numVecsTile = maxAddTileSize / (d * sizeof(float));
       numVecsTile = std::min(numVecsTile, numIndexingVecs);
       numVecsTile = std::max(numVecsTile, (size_t)1);
@@ -167,6 +219,11 @@ void demo_ivfpq(int d, int nbitsCoarseQuantizer, int numSubQuantizers,
       delete cpu_index;
     }
   }
+
+  CUDA_VERIFY(cudaMemGetInfo(&devFree, &devTotal));
+  std::cout << "-------Memory-------" << std::endl;
+  std::cout << "Free: " << devFree << std::endl;
+  std::cout << "Total: " << devTotal << std::endl;
 
   std::vector<int> numQueriesList = {1, 1000, 8192, 10000};
   std::vector<int> nprobeList = {1,  2,   4,   8,   16,   32,
@@ -220,15 +277,15 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  int d, nbitsCoarseQuantizer, numSubQuantizers, nbitsSubQuantizer,
-      queriesOffset, numQueriesBegin, numQueriesEnd, kBegin, kEnd, nprobeBegin,
-      nprobeEnd, isFloat, usePrecomputed, numThreads;
+  int d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer, queriesOffset,
+      numQueriesBegin, numQueriesEnd, kBegin, kEnd, nprobeBegin, nprobeEnd,
+      isFloat, usePrecomputed, numThreads;
   size_t numTrainingVecs, numIndexingVecs;
   std::string fileNameTraining, fileNameIndexing, fileNameQueries,
       fileNameGroundTruth, fileNameIndex;
 
   d = std::stoi(argv[1]);
-  nbitsCoarseQuantizer = std::stoi(argv[2]);
+  coarseCodebookSize = std::stoi(argv[2]);
   numSubQuantizers = std::stoi(argv[3]);
   nbitsSubQuantizer = std::stoi(argv[4]);
   fileNameTraining = argv[5];
@@ -262,14 +319,14 @@ int main(int argc, char **argv) {
   std::cout << "Total: " << devTotal << std::endl;
 
   if (isFloat == 1) {
-    demo_ivfpq<true>(d, nbitsCoarseQuantizer, numSubQuantizers,
-                     nbitsSubQuantizer, fileNameTraining, numTrainingVecs,
-                     fileNameIndexing, numIndexingVecs, fileNameQueries,
-                     queriesOffset, fileNameGroundTruth, numQueriesBegin,
-                     numQueriesEnd, nprobeBegin, nprobeEnd, kBegin, kEnd,
-                     usePrecomputed == 1, fileNameIndex);
+    demo_ivfpq<true>(d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer,
+                     fileNameTraining, numTrainingVecs, fileNameIndexing,
+                     numIndexingVecs, fileNameQueries, queriesOffset,
+                     fileNameGroundTruth, numQueriesBegin, numQueriesEnd,
+                     nprobeBegin, nprobeEnd, kBegin, kEnd, usePrecomputed == 1,
+                     fileNameIndex);
   } else {
-    demo_ivfpq<false>(d, nbitsCoarseQuantizer, numSubQuantizers,
+    demo_ivfpq<false>(d, coarseCodebookSize, numSubQuantizers,
                       nbitsSubQuantizer, fileNameTraining, numTrainingVecs,
                       fileNameIndexing, numIndexingVecs, fileNameQueries,
                       queriesOffset, fileNameGroundTruth, numQueriesBegin,

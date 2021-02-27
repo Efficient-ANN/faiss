@@ -92,6 +92,11 @@ GpuIndexFlat::GpuIndexFlat(std::shared_ptr<GpuResources> resources,
 GpuIndexFlat::~GpuIndexFlat() {
 }
 
+size_t GpuIndexFlat::calcMemorySpaceSize(int numVecs, int dims,
+                                         bool useFloat16) {
+  return FlatIndex::calcMemorySpaceSize(numVecs, dims, useFloat16);
+}
+
 void
 GpuIndexFlat::copyFrom(const faiss::IndexFlat* index) {
   DeviceScope scope(config_.device);

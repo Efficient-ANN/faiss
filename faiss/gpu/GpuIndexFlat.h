@@ -69,6 +69,8 @@ class GpuIndexFlat : public GpuIndex {
 
   ~GpuIndexFlat() override;
 
+  static size_t calcMemorySpaceSize(int numVecs, int dims, bool useFloat16);
+
   /// Initialize ourselves from the given CPU index; will overwrite
   /// all data in ourselves
   void copyFrom(const faiss::IndexFlat* index);

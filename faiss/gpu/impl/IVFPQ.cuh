@@ -37,6 +37,11 @@ class IVFPQ : public IVFBase {
 
   ~IVFPQ() override;
 
+  static size_t calcMemorySpaceSize(int numVecs, int numSubQuantizers,
+                                    int bitsPerSubQuantizer,
+                                    bool interleavedLayout,
+                                    IndicesOptions options);
+
   /// Enable or disable pre-computed codes
   void setPrecomputedCodes(bool enable);
 
@@ -53,6 +58,13 @@ class IVFPQ : public IVFBase {
   Tensor<float, 3, true> getPQCentroids();
 
  protected:
+  static size_t calcVectorsEncodingMemorySpaceSize(int numVecs,
+                                                   int numSubQuantizers,
+                                                   int bitsPerSubQuantizer,
+                                                   bool interleavedLayout);
+
+  static size_t calcIndicesMemorySpaceSize(int numVecs, IndicesOptions options);
+  
   /// Returns the encoding size for a PQ-encoded IVF list
   size_t getGpuVectorsEncodingSize_(int numVecs) const override;
   size_t getCpuVectorsEncodingSize_(int numVecs) const override;

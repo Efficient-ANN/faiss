@@ -71,6 +71,11 @@ GpuIndexIVF::~GpuIndexIVF() {
   delete quantizer;
 }
 
+size_t GpuIndexIVF::calcMemorySpaceSizeCoarseQuantizer(int numVecs, int dims,
+                                                       bool useFloat16) {
+  return GpuIndexFlat::calcMemorySpaceSize(numVecs, dims, useFloat16);
+}
+
 GpuIndexFlat*
 GpuIndexIVF::getQuantizer() {
   return quantizer;

@@ -15,6 +15,7 @@
 #include <faiss/gpu/utils/DeviceTensor.cuh>
 #include <memory>
 #include <thrust/device_vector.h>
+#include <unordered_map>
 #include <vector>
 
 namespace faiss { struct InvertedLists; }
@@ -40,6 +41,11 @@ class IVFBase {
 
   /// Reserve GPU memory in our inverted lists for this number of vectors
   void reserveMemory(size_t numVecs);
+
+  /// Reserve GPU memory in our inverted lists for the exepected number of adds
+  /// per each inverted list
+  void
+  reserveMemory(const std::unordered_map<int, int> *expectedNumAddsPerList);
 
   /// Clear out all inverted lists, but retain the coarse quantizer
   /// and the product quantizer info

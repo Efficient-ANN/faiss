@@ -47,6 +47,10 @@ class GpuIndexIVF : public GpuIndex {
   void init_();
 
  public:
+
+  static size_t calcMemorySpaceSizeCoarseQuantizer(int numVecs,
+                                                   int dims,
+                                                   bool useFloat16);
   /// Copy what we need from the CPU equivalent
   void copyFrom(const faiss::IndexIVF* index);
 
