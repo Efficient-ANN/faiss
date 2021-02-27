@@ -30,6 +30,28 @@ constexpr size_t kNonPinnedPageSize = (size_t)256 * 1024 * 1024;
 
 const int GpuMultiIndex2::NUM_CODEBOOKS = 2;
 
+GpuMultiIndex2::GpuMultiIndex2(GpuResourcesProvider *provider,
+                               const faiss::MultiIndexQuantizer *index,
+                               GpuMultiIndex2Config config)
+    : GpuIndex(provider->getResources(), index->d, index->metric_type,
+               index->metric_arg, config),
+      numVecsPerCodebook_(0), subDim_(index->d / GpuMultiIndex2::NUM_CODEBOOKS),
+      config_(config) {
+  FAISS_ASSERT(index->d % GpuMultiIndex2::NUM_CODEBOOKS == 0);
+  copyFrom(index);
+}
+
+GpuMultiIndex2::GpuMultiIndex2(std::shared_ptr<GpuResources> resources,
+                               const faiss::MultiIndexQuantizer *index,
+                               GpuMultiIndex2Config config)
+    : GpuIndex(resources, index->d, index->metric_type, index->metric_arg,
+               config),
+      numVecsPerCodebook_(0), subDim_(index->d / GpuMultiIndex2::NUM_CODEBOOKS),
+      config_(config) {
+  FAISS_ASSERT(index->d % GpuMultiIndex2::NUM_CODEBOOKS == 0);
+  copyFrom(index);
+}
+
 GpuMultiIndex2::GpuMultiIndex2(GpuResourcesProvider *provider, int dims,
                                int numVecsPerCodebook_,
                                GpuMultiIndex2Config config)
@@ -61,6 +83,79 @@ size_t GpuMultiIndex2::calcMemorySpaceSize(int numVecsTotal, int dimPerCodebook,
                                            bool useFloat16) {
   return MultiIndex2::calcMemorySpaceSize(numVecsTotal, dimPerCodebook,
                                           useFloat16);
+}
+
+void GpuMultiIndex2::copyFrom(const faiss::MultiIndexQuantizer *index) {
+  DeviceScope scope(config_.device);
+
+  FAISS_ASSERT(index->pq.M == GpuMultiIndex2::NUM_CODEBOOKS);
+  FAISS_ASSERT(index->metric_type == faiss::MetricType::METRIC_L2);
+  FAISS_ASSERT(index->metric_arg == 0);
+
+  GpuIndex::copyFrom(index);
+
+  // GPU code has 32 bit indices
+  FAISS_THROW_IF_NOT_FMT(
+      index->ntotal <= (Index::idx_t)std::numeric_limits<int>::max(),
+      "GPU index only supports up to %zu indices; "
+      "attempting to copy CPU index with %zu parameters",
+      (size_t)std::numeric_limits<int>::max(), (size_t)index->ntotal);
+
+  data_.reset(new MultiIndex2(resources_.get(), this->d, config_.memorySpace));
+
+  FAISS_ASSERT(this->d % GpuMultiIndex2::NUM_CODEBOOKS == 0);
+  FAISS_ASSERT(this->d / GpuMultiIndex2::NUM_CODEBOOKS == index->pq.dsub);
+  FAISS_ASSERT(index->pq.centroids.size() / this->d == index->ntotal);
+
+  subDim_ = index->pq.dsub;
+  numVecsPerCodebook_ = index->pq.centroids.size() / this->d;
+
+  // The index could be empty
+  if (index->ntotal > 0) {
+
+    if (this->is_trained) {
+      data_->reset();
+    }
+
+    data_->add(index->pq.centroids.data(),
+               GpuMultiIndex2::NUM_CODEBOOKS * numVecsPerCodebook_,
+               resources_->getDefaultStream(config_.device));
+
+    FAISS_ASSERT(this->ntotal == numVecsPerCodebook_ * numVecsPerCodebook_);
+    FAISS_ASSERT(this->is_trained);
+  }
+}
+
+void GpuMultiIndex2::copyTo(faiss::MultiIndexQuantizer *index) const {
+  DeviceScope scope(config_.device);
+
+  GpuIndex::copyTo(index);
+
+  FAISS_ASSERT(data_);
+  FAISS_ASSERT(data_->getSize() == this->ntotal);
+
+  index->pq = faiss::ProductQuantizer();
+  index->pq.d = this->d;
+  index->pq.M = GpuMultiIndex2::NUM_CODEBOOKS;
+  index->pq.nbits = utils::log2(data_->getCodebookSize());
+  index->pq.dsub = subDim_;
+
+  size_t nbitsCode = utils::isPowerOf2(data_->getCodebookSize())
+                         ? index->pq.nbits
+                         : index->pq.nbits + 1;
+
+  index->pq.code_size = (nbitsCode * index->pq.M + 7) / 8;
+  index->pq.ksub = data_->getCodebookSize();
+  index->pq.centroids.resize(index->pq.d * index->pq.ksub);
+  index->pq.verbose = false;
+  index->pq.train_type = faiss::ProductQuantizer::train_type_t::Train_default;
+
+  auto stream = resources_->getDefaultStream(config_.device);
+
+  if (this->ntotal > 0) {
+    fromDevice(data_->getVectorsFloat32Ref(), index->pq.centroids.data(),
+               stream);
+  }
 }
 
 int GpuMultiIndex2::toMultiIndex(std::pair<ushort, ushort> indexPair) const {

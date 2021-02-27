@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <ctime>
 #include <faiss/Index.h>
+#include <faiss/IndexFlat.h>
 #include <faiss/IndexIVFPQ.h>
 #include <faiss/MetricType.h>
 #include <faiss/gpu/GpuCloner.h>
@@ -85,6 +86,7 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
                 size_t queriesOffset, std::string fileNameGroundTruth,
                 int numQueriesBegin, int numQueriesEnd, int nprobeBegin,
                 int nprobeEnd, int kBegin, int kEnd, bool usePrecomputed,
+                std::string fileNameCoarseQuantizer,
                 std::string fileNameIndex) {
   faiss::gpu::IndicesOptions indiceOptions = faiss::gpu::INDICES_32_BIT;
   size_t fixedMemSize = faiss::gpu::GpuIndexIVFPQ::calcMemorySpaceSize(
@@ -128,6 +130,21 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
                                           nbitsSubQuantizer, faiss::METRIC_L2,
                                           config);
     { // train
+      bool isTrained = false;
+      if (!fileNameCoarseQuantizer.empty()) {
+        FILE *f = fopen(fileNameCoarseQuantizer.c_str(), "rb");
+        if (f) {
+          fclose(f);
+          faiss::Index *cpu_index = dynamic_cast<faiss::IndexFlat *>(
+              faiss::read_index(fileNameCoarseQuantizer.c_str()));
+          ivfpq->quantizer->copyFrom(cpu_index);
+          delete cpu_index;
+          isTrained = true;
+        } else {
+          fclose(f);
+        }
+      }
+
       float *trainingVecs;
       if (isVecFloat) {
         trainingVecs = faiss::fvecs_read(fileNameTraining.c_str(),
@@ -143,6 +160,10 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
       tGpu = (double)(tEnd - tStart) / CLOCKS_PER_SEC;
       std::cout << "IVFPQ train time on GPU: " << tGpu << std::endl;
       delete trainingVecs;
+
+      faiss::Index *cpu_index = faiss::gpu::index_gpu_to_cpu(ivfpq->quantizer);
+      faiss::write_index(cpu_index, fileNameCoarseQuantizer.c_str());
+      delete cpu_index;
     }
 
     CUDA_VERIFY(cudaMemGetInfo(&devFree, &devTotal));
@@ -282,7 +303,7 @@ int main(int argc, char **argv) {
       isFloat, usePrecomputed, numThreads;
   size_t numTrainingVecs, numIndexingVecs;
   std::string fileNameTraining, fileNameIndexing, fileNameQueries,
-      fileNameGroundTruth, fileNameIndex;
+      fileNameGroundTruth, fileNameCoarseQuantizer, fileNameIndex;
 
   d = std::stoi(argv[1]);
   coarseCodebookSize = std::stoi(argv[2]);
@@ -304,6 +325,7 @@ int main(int argc, char **argv) {
   isFloat = std::stoi(argv[18]);
   usePrecomputed = argc > 19 ? std::stoi(argv[19]) : 1;
   numThreads = argc > 20 ? std::stoi(argv[20]) : 1;
+  fileNameCoarseQuantizer = argc > 21 ? argv[21] : "";
   fileNameIndex = "";
 
   omp_set_num_threads(numThreads);
@@ -324,14 +346,14 @@ int main(int argc, char **argv) {
                      numIndexingVecs, fileNameQueries, queriesOffset,
                      fileNameGroundTruth, numQueriesBegin, numQueriesEnd,
                      nprobeBegin, nprobeEnd, kBegin, kEnd, usePrecomputed == 1,
-                     fileNameIndex);
+                     fileNameCoarseQuantizer, fileNameIndex);
   } else {
-    demo_ivfpq<false>(d, coarseCodebookSize, numSubQuantizers,
-                      nbitsSubQuantizer, fileNameTraining, numTrainingVecs,
-                      fileNameIndexing, numIndexingVecs, fileNameQueries,
-                      queriesOffset, fileNameGroundTruth, numQueriesBegin,
-                      numQueriesEnd, nprobeBegin, nprobeEnd, kBegin, kEnd,
-                      usePrecomputed == 1, fileNameIndex);
+    demo_ivfpq<false>(
+        d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer,
+        fileNameTraining, numTrainingVecs, fileNameIndexing, numIndexingVecs,
+        fileNameQueries, queriesOffset, fileNameGroundTruth, numQueriesBegin,
+        numQueriesEnd, nprobeBegin, nprobeEnd, kBegin, kEnd,
+        usePrecomputed == 1, fileNameCoarseQuantizer, fileNameIndex);
   }
   return 0;
 }

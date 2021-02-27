@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include <faiss/IndexPQ.h>
 #include <faiss/gpu/GpuIndex.h>
 #include <memory>
 #include <utility>
@@ -23,6 +24,16 @@ struct GpuMultiIndex2Config : GpuIndexConfig {
 
 class GpuMultiIndex2 : public GpuIndex {
 public:
+  /// Construct from a pre-existing faiss::IndexFlat instance, copying
+  /// data over to the given GPU
+  GpuMultiIndex2(GpuResourcesProvider *provider,
+                 const faiss::MultiIndexQuantizer *index,
+                 GpuMultiIndex2Config config = GpuMultiIndex2Config());
+
+  GpuMultiIndex2(std::shared_ptr<GpuResources> resources,
+                 const faiss::MultiIndexQuantizer *index,
+                 GpuMultiIndex2Config config = GpuMultiIndex2Config());
+
   GpuMultiIndex2(GpuResourcesProvider *provider, int dims,
                  int numCentroidsPerCodebook,
                  GpuMultiIndex2Config config = GpuMultiIndex2Config());
@@ -35,6 +46,14 @@ public:
 
   static size_t calcMemorySpaceSize(int numVecsTotal, int dimPerCodebook,
                                     bool useFloat16);
+
+  /// Initialize ourselves from the given CPU index; will overwrite
+  /// all data in ourselves
+  void copyFrom(const faiss::MultiIndexQuantizer *index);
+
+  /// Copy ourselves to the given CPU index; will overwrite all data
+  /// in the index instance
+  void copyTo(faiss::MultiIndexQuantizer *index) const;
 
   int toMultiIndex(std::pair<ushort, ushort> indexPair) const;
 

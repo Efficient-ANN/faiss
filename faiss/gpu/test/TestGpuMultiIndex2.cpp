@@ -21,6 +21,58 @@
 
 constexpr float kF32MaxRelErr = 6e-3f;
 
+void testCopyFrom(int d, int nbits, int numCentroidsPerCodebook,
+                  int numOfTrainingVecs) {
+  constexpr int M = 2;
+  faiss::MultiIndexQuantizer cpuIndex(d, M, nbits);
+
+  std::vector<float> vecs = faiss::gpu::randVecs(numOfTrainingVecs, d);
+  cpuIndex.train(vecs.size(), vecs.data());
+
+  faiss::gpu::StandardGpuResources res;
+
+  faiss::gpu::GpuMultiIndex2Config config;
+  faiss::gpu::GpuMultiIndex2 gpuIndex(&res, d, numCentroidsPerCodebook, config);
+  gpuIndex.copyFrom(&cpuIndex);
+
+  EXPECT_EQ(cpuIndex.ntotal, gpuIndex.ntotal);
+  EXPECT_EQ(gpuIndex.getCodebookSize(), numCentroidsPerCodebook);
+  EXPECT_EQ(gpuIndex.ntotal, gpuIndex.getNumVecs());
+  EXPECT_EQ(gpuIndex.ntotal, numCentroidsPerCodebook * numCentroidsPerCodebook);
+  EXPECT_EQ(cpuIndex.pq.M, gpuIndex.getNumCodebooks());
+  EXPECT_EQ(cpuIndex.pq.dsub, gpuIndex.getSubDim());
+
+  std::vector<float> gpuCentroids = gpuIndex.getCentroids();
+
+  EXPECT_EQ(cpuIndex.pq.centroids, gpuCentroids);
+}
+
+void testCopyTo(int d, int nbits, int numCentroidsPerCodebook,
+                int numOfTrainingVecs) {
+  faiss::gpu::StandardGpuResources res;
+  faiss::gpu::GpuMultiIndex2Config config;
+
+  faiss::gpu::GpuMultiIndex2 gpuIndex(&res, d, numCentroidsPerCodebook, config);
+
+  std::vector<float> vecs = faiss::gpu::randVecs(numOfTrainingVecs, d);
+  gpuIndex.train(vecs.size(), vecs.data());
+
+  constexpr int M = 2;
+  faiss::MultiIndexQuantizer cpuIndex(d, M, nbits);
+  gpuIndex.copyTo(&cpuIndex);
+
+  EXPECT_EQ(cpuIndex.ntotal, gpuIndex.ntotal);
+  EXPECT_EQ(gpuIndex.getCodebookSize(), numCentroidsPerCodebook);
+  EXPECT_EQ(gpuIndex.ntotal, gpuIndex.getNumVecs());
+  EXPECT_EQ(gpuIndex.ntotal, numCentroidsPerCodebook * numCentroidsPerCodebook);
+  EXPECT_EQ(cpuIndex.pq.M, gpuIndex.getNumCodebooks());
+  EXPECT_EQ(cpuIndex.pq.dsub, gpuIndex.getSubDim());
+
+  std::vector<float> gpuCentroids = gpuIndex.getCentroids();
+
+  EXPECT_EQ(cpuIndex.pq.centroids, gpuCentroids);
+}
+
 void testTrain(int d, int numCentroidsPerCodebook, int numOfTrainingVecs) {
   faiss::gpu::StandardGpuResources res;
   faiss::gpu::GpuMultiIndex2 gpuMultiIndex(&res, d, numCentroidsPerCodebook);
@@ -283,6 +335,32 @@ TEST(TestGpuMultiIndex2, testConstructor) {
     EXPECT_EQ(gpuMultiIndex.getNumCodebooks(), 2);
     EXPECT_EQ(gpuMultiIndex.getSubDim(),
               dList[i] / gpuMultiIndex.getNumCodebooks());
+  }
+}
+
+TEST(TestGpuMultiIndex2, copyFrom) {
+  std::vector<int> dList = {2, 4};
+  std::vector<int> nbitsList = {0, 2};
+  std::vector<int> numCentroidsPerCodebookList = {1, 4};
+  for (int i = 0; i < dList.size(); i++) {
+    for (int j = 0; j < numCentroidsPerCodebookList.size(); j++) {
+      int numTrainingVecs = numCentroidsPerCodebookList[j] * 39;
+      testCopyFrom(dList[i], nbitsList[j], numCentroidsPerCodebookList[j],
+                   numTrainingVecs);
+    }
+  }
+}
+
+TEST(TestGpuMultiIndex2, copyTo) {
+  std::vector<int> dList = {2, 4};
+  std::vector<int> nbitsList = {0, 2, 2};
+  std::vector<int> numCentroidsPerCodebookList = {1, 4, 6};
+  for (int i = 0; i < dList.size(); i++) {
+    for (int j = 0; j < numCentroidsPerCodebookList.size(); j++) {
+      int numTrainingVecs = numCentroidsPerCodebookList[j] * 39;
+      testCopyTo(dList[i], nbitsList[j], numCentroidsPerCodebookList[j],
+                 numTrainingVecs);
+    }
   }
 }
 

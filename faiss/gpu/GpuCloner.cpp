@@ -15,6 +15,7 @@
 #include <faiss/IndexFlat.h>
 #include <faiss/IndexIVF.h>
 #include <faiss/IndexIVFFlat.h>
+#include <faiss/IndexPQ.h>
 #include <faiss/IndexScalarQuantizer.h>
 #include <faiss/IndexIVFPQ.h>
 #include <faiss/IndexReplicas.h>
@@ -24,6 +25,7 @@
 #include <faiss/gpu/GpuIndexIVFFlat.h>
 #include <faiss/gpu/GpuIndexIVFPQ.h>
 #include <faiss/gpu/GpuIndexIVFScalarQuantizer.h>
+#include <faiss/gpu/GpuMultiIndex2.h>
 #include <faiss/gpu/utils/DeviceUtils.h>
 
 namespace faiss { namespace gpu {
@@ -62,6 +64,10 @@ Index *ToCPUCloner::clone_Index(const Index *index)
 {
     if(auto ifl = dynamic_cast<const GpuIndexFlat *>(index)) {
         IndexFlat *res = new IndexFlat();
+        ifl->copyTo(res);
+        return res;
+    } if(auto ifl = dynamic_cast<const GpuMultiIndex2 *>(index)) {
+        MultiIndexQuantizer *res = new MultiIndexQuantizer();
         ifl->copyTo(res);
         return res;
     } else if(auto ifl = dynamic_cast<const GpuIndexIVFFlat *>(index)) {
@@ -128,6 +134,10 @@ Index *ToGpuCloner::clone_Index(const Index *index)
         config.useFloat16 = useFloat16;
         config.storeTransposed = storeTransposed;
         return new GpuIndexFlat(provider, ifl, config);
+    } if(auto ifl = dynamic_cast<const MultiIndexQuantizer *>(index)) {
+        GpuMultiIndex2Config config;
+        config.device = device;
+        return new GpuMultiIndex2(provider, ifl, config);
     } else if (
         dynamic_cast<const IndexScalarQuantizer *>(index) &&
         static_cast<const IndexScalarQuantizer *>(index)->sq.qtype ==

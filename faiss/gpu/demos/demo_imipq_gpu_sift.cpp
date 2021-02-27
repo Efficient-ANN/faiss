@@ -7,12 +7,16 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstdio>
 #include <ctime>
 #include <faiss/Index.h>
+#include <faiss/IndexPQ.h>
+#include <faiss/gpu/GpuCloner.h>
 #include <faiss/gpu/GpuIndexIMIPQ.h>
 #include <faiss/gpu/GpuIndicesOptions.h>
 #include <faiss/gpu/StandardGpuResources.h>
 #include <faiss/gpu/utils/DeviceUtils.h>
+#include <faiss/index_io.h>
 #include <faiss/utils/vecs_storage.h>
 #include <iomanip>
 #include <iostream>
@@ -79,7 +83,8 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
                 size_t numIndexingVecs, std::string fileNameQueries,
                 size_t queriesOffset, std::string fileNameGroundTruth,
                 int numQueriesBegin, int numQueriesEnd, int nprobeBegin,
-                int nprobeEnd, int kBegin, int kEnd) {
+                int nprobeEnd, int kBegin, int kEnd,
+                std::string fileNameCoarseQuantizer) {
   faiss::gpu::IndicesOptions indiceOptions = faiss::gpu::INDICES_32_BIT;
   size_t fixedMemSize = faiss::gpu::GpuIndexIMIPQ::calcMemorySpaceSize(
       coarseCodebookSize * 2, d / 2, false, numIndexingVecs, numSubQuantizers,
@@ -103,21 +108,43 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
   size_t devTotal = 0;
 
   { // train
-    float *trainingVecs;
-    if (isVecFloat) {
-      trainingVecs = faiss::fvecs_read(fileNameTraining.c_str(),
-                                       numTrainingVecs, 0, &dRead);
-    } else {
-      trainingVecs = faiss::bvecs_read(fileNameTraining.c_str(),
-                                       numTrainingVecs, 0, &dRead);
+    bool isTrained = false;
+    if (!fileNameCoarseQuantizer.empty()) {
+      FILE *f = fopen(fileNameCoarseQuantizer.c_str(), "rb");
+      if (f) {
+        fclose(f);
+        faiss::Index *cpu_index = dynamic_cast<faiss::MultiIndexQuantizer *>(
+            faiss::read_index(fileNameCoarseQuantizer.c_str()));
+        imipqGpu.quantizer->copyFrom(cpu_index);
+        delete cpu_index;
+        isTrained = true;
+      } else {
+        fclose(f);
+      }
     }
-    assert(d == dRead);
-    tStart = clock();
-    imipqGpu.train(numTrainingVecs, trainingVecs);
-    tEnd = clock();
-    tGpu = (double)(tEnd - tStart) / CLOCKS_PER_SEC;
-    std::cout << "IMIPQ train time on GPU: " << tGpu << std::endl;
-    delete trainingVecs;
+
+    if (!isTrained) {
+      float *trainingVecs;
+      if (isVecFloat) {
+        trainingVecs = faiss::fvecs_read(fileNameTraining.c_str(),
+                                         numTrainingVecs, 0, &dRead);
+      } else {
+        trainingVecs = faiss::bvecs_read(fileNameTraining.c_str(),
+                                         numTrainingVecs, 0, &dRead);
+      }
+      assert(d == dRead);
+      tStart = clock();
+      imipqGpu.train(numTrainingVecs, trainingVecs);
+      tEnd = clock();
+      tGpu = (double)(tEnd - tStart) / CLOCKS_PER_SEC;
+      std::cout << "IMIPQ train time on GPU: " << tGpu << std::endl;
+      delete trainingVecs;
+
+      faiss::Index *cpu_index =
+          faiss::gpu::index_gpu_to_cpu(imipqGpu.quantizer);
+      faiss::write_index(cpu_index, fileNameCoarseQuantizer.c_str());
+      delete cpu_index;
+    }
   }
 
   CUDA_VERIFY(cudaMemGetInfo(&devFree, &devTotal));
@@ -242,7 +269,7 @@ int main(int argc, char **argv) {
       isFloat, numThreads;
   size_t numTrainingVecs, numIndexingVecs;
   std::string fileNameTraining, fileNameIndexing, fileNameQueries,
-      fileNameGroundTruth;
+      fileNameGroundTruth, fileNameCoarseQuantizer;
 
   d = std::stoi(argv[1]);
   coarseCodebookSize = std::stoi(argv[2]);
@@ -263,6 +290,7 @@ int main(int argc, char **argv) {
   kEnd = std::stoi(argv[17]);
   isFloat = std::stoi(argv[18]);
   numThreads = argc > 19 ? std::stoi(argv[19]) : 1;
+  fileNameCoarseQuantizer = argc > 20 ? argv[20] : "";
 
   omp_set_num_threads(numThreads);
 
@@ -281,13 +309,15 @@ int main(int argc, char **argv) {
                      fileNameTraining, numTrainingVecs, fileNameIndexing,
                      numIndexingVecs, fileNameQueries, queriesOffset,
                      fileNameGroundTruth, numQueriesBegin, numQueriesEnd,
-                     nprobeBegin, nprobeEnd, kBegin, kEnd);
+                     nprobeBegin, nprobeEnd, kBegin, kEnd,
+                     fileNameCoarseQuantizer);
   } else {
     demo_imipq<false>(d, coarseCodebookSize, numSubQuantizers,
                       nbitsSubQuantizer, fileNameTraining, numTrainingVecs,
                       fileNameIndexing, numIndexingVecs, fileNameQueries,
                       queriesOffset, fileNameGroundTruth, numQueriesBegin,
-                      numQueriesEnd, nprobeBegin, nprobeEnd, kBegin, kEnd);
+                      numQueriesEnd, nprobeBegin, nprobeEnd, kBegin, kEnd,
+                      fileNameCoarseQuantizer);
   }
   return 0;
 }
