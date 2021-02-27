@@ -27,7 +27,7 @@ void testCopyFrom(int d, int nbits, int numCentroidsPerCodebook,
   faiss::MultiIndexQuantizer cpuIndex(d, M, nbits);
 
   std::vector<float> vecs = faiss::gpu::randVecs(numOfTrainingVecs, d);
-  cpuIndex.train(vecs.size(), vecs.data());
+  cpuIndex.train(numOfTrainingVecs, vecs.data());
 
   faiss::gpu::StandardGpuResources res;
 
@@ -55,7 +55,7 @@ void testCopyTo(int d, int nbits, int numCentroidsPerCodebook,
   faiss::gpu::GpuMultiIndex2 gpuIndex(&res, d, numCentroidsPerCodebook, config);
 
   std::vector<float> vecs = faiss::gpu::randVecs(numOfTrainingVecs, d);
-  gpuIndex.train(vecs.size(), vecs.data());
+  gpuIndex.train(numOfTrainingVecs, vecs.data());
 
   constexpr int M = 2;
   faiss::MultiIndexQuantizer cpuIndex(d, M, nbits);

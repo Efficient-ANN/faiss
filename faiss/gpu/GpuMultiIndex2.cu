@@ -105,10 +105,11 @@ void GpuMultiIndex2::copyFrom(const faiss::MultiIndexQuantizer *index) {
 
   FAISS_ASSERT(this->d % GpuMultiIndex2::NUM_CODEBOOKS == 0);
   FAISS_ASSERT(this->d / GpuMultiIndex2::NUM_CODEBOOKS == index->pq.dsub);
-  FAISS_ASSERT(index->pq.centroids.size() / this->d == index->ntotal);
 
   subDim_ = index->pq.dsub;
   numVecsPerCodebook_ = index->pq.centroids.size() / this->d;
+
+  FAISS_ASSERT(this->ntotal == numVecsPerCodebook_ * numVecsPerCodebook_);
 
   // The index could be empty
   if (index->ntotal > 0) {
@@ -121,7 +122,6 @@ void GpuMultiIndex2::copyFrom(const faiss::MultiIndexQuantizer *index) {
                GpuMultiIndex2::NUM_CODEBOOKS * numVecsPerCodebook_,
                resources_->getDefaultStream(config_.device));
 
-    FAISS_ASSERT(this->ntotal == numVecsPerCodebook_ * numVecsPerCodebook_);
     FAISS_ASSERT(this->is_trained);
   }
 }
