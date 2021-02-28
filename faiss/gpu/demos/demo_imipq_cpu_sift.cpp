@@ -97,8 +97,6 @@ void demo_imipq(int d, int nbitsCoarseQuantizer, int numSubQuantizers,
       imipq = dynamic_cast<faiss::IndexIVFPQ *>(
           faiss::read_index(fileNameIndex.c_str()));
       isLoadead = true;
-    } else {
-      fclose(f);
     }
   }
 

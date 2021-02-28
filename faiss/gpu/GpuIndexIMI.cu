@@ -184,6 +184,17 @@ void GpuIndexIMI::addPage_(int n, const float *x, const Index::idx_t *ids) {
 }
 
 void GpuIndexIMI::trainQuantizer_(faiss::Index::idx_t n, const float *x) {
+  if (quantizer->is_trained && (quantizer->ntotal == nlist)) {
+    if (this->verbose) {
+      printf("IMI quantizer does not need training.\n");
+    }
+
+    return;
+  }
+
+  if (this->verbose) {
+    printf("Training IMI quantizer on %ld vectors in %dD\n", n, d);
+  }
   quantizer->train(n, x);
 }
 

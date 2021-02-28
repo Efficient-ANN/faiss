@@ -120,8 +120,6 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
           faiss::gpu::index_gpu_to_cpu(cpu_index));
       delete cpu_index;
       isLoadead = true;
-    } else {
-      fclose(f);
     }
   }
 
@@ -140,8 +138,6 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
           ivfpq->quantizer->copyFrom(cpu_index);
           delete cpu_index;
           isTrained = true;
-        } else {
-          fclose(f);
         }
       }
 
