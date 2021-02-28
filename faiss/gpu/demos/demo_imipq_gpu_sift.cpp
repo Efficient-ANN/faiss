@@ -108,7 +108,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
   size_t devTotal = 0;
 
   { // train
-    bool isTrained = false;
+    bool storeCoarseQuantizer = true;
     if (!fileNameCoarseQuantizer.empty()) {
       FILE *f = fopen(fileNameCoarseQuantizer.c_str(), "rb");
       if (f) {
@@ -117,16 +117,17 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
             faiss::read_index(fileNameCoarseQuantizer.c_str()));
         imipqGpu.quantizer->copyFrom(cpu_index);
         delete cpu_index;
+        storeCoarseQuantizer = false;
       }
     }
-    
+
     float *trainingVecs;
     if (isVecFloat) {
       trainingVecs = faiss::fvecs_read(fileNameTraining.c_str(),
-                                        numTrainingVecs, 0, &dRead);
+                                       numTrainingVecs, 0, &dRead);
     } else {
       trainingVecs = faiss::bvecs_read(fileNameTraining.c_str(),
-                                        numTrainingVecs, 0, &dRead);
+                                       numTrainingVecs, 0, &dRead);
     }
     assert(d == dRead);
     tStart = clock();
@@ -136,10 +137,12 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
     std::cout << "IMIPQ train time on GPU: " << tGpu << std::endl;
     delete trainingVecs;
 
-    faiss::Index *cpu_index =
-        faiss::gpu::index_gpu_to_cpu(imipqGpu.quantizer);
-    faiss::write_index(cpu_index, fileNameCoarseQuantizer.c_str());
-    delete cpu_index;
+    if (storeCoarseQuantizer) {
+      faiss::Index *cpu_index =
+          faiss::gpu::index_gpu_to_cpu(imipqGpu.quantizer);
+      faiss::write_index(cpu_index, fileNameCoarseQuantizer.c_str());
+      delete cpu_index;
+    }
   }
 
   CUDA_VERIFY(cudaMemGetInfo(&devFree, &devTotal));

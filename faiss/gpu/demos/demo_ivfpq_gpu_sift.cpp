@@ -128,7 +128,7 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
                                           nbitsSubQuantizer, faiss::METRIC_L2,
                                           config);
     { // train
-      bool isTrained = false;
+      bool storeCoarseQuantizer = false;
       if (!fileNameCoarseQuantizer.empty()) {
         FILE *f = fopen(fileNameCoarseQuantizer.c_str(), "rb");
         if (f) {
@@ -137,7 +137,7 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
               faiss::read_index(fileNameCoarseQuantizer.c_str()));
           ivfpq->quantizer->copyFrom(cpu_index);
           delete cpu_index;
-          isTrained = true;
+          storeCoarseQuantizer = true;
         }
       }
 
@@ -157,9 +157,12 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
       std::cout << "IVFPQ train time on GPU: " << tGpu << std::endl;
       delete trainingVecs;
 
-      faiss::Index *cpu_index = faiss::gpu::index_gpu_to_cpu(ivfpq->quantizer);
-      faiss::write_index(cpu_index, fileNameCoarseQuantizer.c_str());
-      delete cpu_index;
+      if (storeCoarseQuantizer) {
+        faiss::Index *cpu_index =
+            faiss::gpu::index_gpu_to_cpu(ivfpq->quantizer);
+        faiss::write_index(cpu_index, fileNameCoarseQuantizer.c_str());
+        delete cpu_index;
+      }
     }
 
     CUDA_VERIFY(cudaMemGetInfo(&devFree, &devTotal));
