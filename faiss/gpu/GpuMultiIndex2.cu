@@ -10,6 +10,7 @@
 #include <faiss/MetricType.h>
 #include <faiss/gpu/GpuIndexFlat.h>
 #include <faiss/gpu/GpuMultiIndex2.h>
+#include <faiss/gpu/impl/FlatIndex.cuh>
 #include <faiss/gpu/impl/MultiIndex2.cuh>
 #include <faiss/gpu/utils/CopyUtils.cuh>
 #include <faiss/gpu/utils/DeviceTensor.cuh>
@@ -231,8 +232,6 @@ void GpuMultiIndex2::train(Index::idx_t n, const float *x) {
   fvec_split(subQueries, GpuMultiIndex2::NUM_CODEBOOKS, x, (size_t)n, subDim_);
 
   int numSubCentroids = GpuMultiIndex2::NUM_CODEBOOKS * numVecsPerCodebook_;
-  // float *subCentroids = new float[(unsigned long)numSubCentroids * subDim_];
-  // ScopeDeleter<float> delSubCentroids(subCentroids);
 
   DeviceTensor<float, 1, true> subCentroids(
       resources_.get(), makeTempAlloc(AllocType::Other, stream),
@@ -249,24 +248,17 @@ void GpuMultiIndex2::train(Index::idx_t n, const float *x) {
 
     Clustering clus(subDim_, numVecsPerCodebook_, this->cp);
     clus.verbose = verbose;
-
-    const float *currentSubCentroids = subQueries + (i * n * subDim_);
-
-    clus.train(n, currentSubCentroids, codebookList[i].get());
+    clus.train(n, subQueries + (i * n * subDim_), *codebookList[i]);
     codebookList[i]->is_trained = true;
 
-    fromDevice<float, 2>(codebookList[i]->getGpuData()->getVectorsFloat32Ref(),
-                         subCentroids.data() + numVecsPerCodebook_ * subDim_,
-                         stream);
-  }
+    auto codebookVecs = codebookList[i]->getGpuData()->getVectorsFloat32Ref();
 
-  // #pragma omp parallel for
-  //   for (int i = 0; i < GpuMultiIndex2::NUM_CODEBOOKS; i++) {
-  //     kmeans_clustering(
-  //         subDim_, (size_t)n, numVecsPerCodebook_, subQueries + (i * n *
-  //         subDim_), subCentroids + (i * numVecsPerCodebook_ * subDim_),
-  //         this->verbose);
-  //   }
+    FAISS_ASSERT(codebookVecs.numElements() == numVecsPerCodebook_ * subDim_);
+
+    fromDevice<float>(codebookVecs.data(),
+                      subCentroids.data() + numVecsPerCodebook_ * subDim_,
+                      codebookVecs.numElements(), stream);
+  }
 
   data_->add(subCentroids.data(), numSubCentroids, stream);
 

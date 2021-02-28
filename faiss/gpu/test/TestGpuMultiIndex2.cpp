@@ -133,91 +133,6 @@ void testSearch(int d, int numCentroidsPerCodebook, int k, int numOfQueries,
   }
 }
 
-void compareCpuWithGpu(int d, int nbits, int k, int numOfQueries,
-                       int numOfTrainingVecs) {
-  constexpr int M = 2;
-  faiss::MultiIndexQuantizer multiIndex(d, M, nbits);
-  faiss::gpu::StandardGpuResources res;
-  // res.noTempMemory();
-  int numCentroidsPerCodebook = 1 << nbits;
-  faiss::gpu::GpuMultiIndex2 gpuMultiIndex(&res, d, numCentroidsPerCodebook);
-
-  { // training
-    std::vector<float> trainvecs = faiss::gpu::randVecs(numOfTrainingVecs, d);
-    multiIndex.train(numOfTrainingVecs, trainvecs.data());
-    gpuMultiIndex.train(numOfTrainingVecs, trainvecs.data());
-  }
-
-  faiss::gpu::compareIndices(multiIndex, gpuMultiIndex, numOfQueries, d, k,
-                             "compareCpuWithGpu", kF32MaxRelErr, 0.1f, 0.015f);
-}
-
-void compareFlatWithMultiIndex(int d, int numCentroidsPerCodebook,
-                               int numOfQueries, int numOfTrainingVecs) {
-  constexpr int M = 2;
-  const int k = 1;
-  faiss::gpu::StandardGpuResources res;
-  // res.noTempMemory();
-  faiss::gpu::GpuMultiIndex2 gpuMultiIndex(&res, d, numCentroidsPerCodebook);
-  int subDim = d / M;
-  faiss::gpu::GpuIndexFlatL2 gpuIndexFlat1(&res, subDim);
-  faiss::gpu::GpuIndexFlatL2 gpuIndexFlat2(&res, subDim);
-
-  { // training
-    std::vector<float> trainvecs = faiss::gpu::randVecs(numOfTrainingVecs, d);
-
-    gpuMultiIndex.train(numOfTrainingVecs, trainvecs.data());
-
-    std::vector<float> subQueries(M * numOfTrainingVecs * subDim);
-    faiss::fvec_split(subQueries.data(), M, trainvecs.data(),
-                      (size_t)numOfTrainingVecs, subDim);
-
-    int numSubCentroids = M * numCentroidsPerCodebook;
-    std::vector<float> subCentroids((unsigned long)numSubCentroids * subDim);
-    for (int i = 0; i < M; i++) {
-      faiss::kmeans_clustering(
-          subDim, (size_t)numOfTrainingVecs, numCentroidsPerCodebook,
-          subQueries.data() + (i * numOfTrainingVecs * subDim),
-          subCentroids.data() + (i * numCentroidsPerCodebook * subDim), false);
-    }
-
-    gpuIndexFlat1.add(numCentroidsPerCodebook, subCentroids.data());
-    gpuIndexFlat2.add(numCentroidsPerCodebook,
-                      subCentroids.data() + numCentroidsPerCodebook * subDim);
-  }
-
-  { // search
-    std::vector<faiss::Index::idx_t> outLabels(k * numOfQueries);
-    std::vector<float> outDistances(k * numOfQueries);
-    std::vector<faiss::Index::idx_t> outLabelsFlat(M * k * numOfQueries);
-    std::vector<float> outDistancesFlat(M * k * numOfQueries);
-    std::vector<float> queries = faiss::gpu::randVecs(numOfQueries, d);
-
-    std::vector<float> subQueries(M * numOfQueries * subDim);
-    faiss::fvec_split(subQueries.data(), M, queries.data(),
-                      (size_t)numOfQueries, subDim);
-
-    gpuIndexFlat1.search(numOfQueries, subQueries.data(), k,
-                         outDistancesFlat.data(), outLabelsFlat.data());
-    gpuIndexFlat2.search(numOfQueries,
-                         subQueries.data() + numOfQueries * subDim, k,
-                         outDistancesFlat.data() + k * numOfQueries,
-                         outLabelsFlat.data() + k * numOfQueries);
-
-    gpuMultiIndex.search(numOfQueries, queries.data(), k, outDistances.data(),
-                         outLabels.data());
-
-    bool error = false;
-    for (int i = 0; i < numOfQueries; i++) {
-      error = error ||
-              outLabels[i * k] != outLabelsFlat[i * k] +
-                                      numCentroidsPerCodebook *
-                                          outLabelsFlat[(i + numOfQueries) * k];
-    }
-    EXPECT_FALSE(error);
-  }
-}
-
 void testComputeResidualPair(int d, int numCentroidsPerCodebook) {
   FAISS_ASSERT(d % 2 == 0 && d > 0);
   FAISS_ASSERT(numCentroidsPerCodebook > 0);
@@ -338,6 +253,47 @@ TEST(TestGpuMultiIndex2, testConstructor) {
   }
 }
 
+TEST(TestGpuMultiIndex2, testTrain) {
+  std::vector<int> dList = {2, 4};
+  std::vector<int> numCentroidsPerCodebookList = {1, 2};
+  for (int i = 0; i < dList.size(); i++) {
+    for (int j = 0; j < numCentroidsPerCodebookList.size(); j++) {
+      int numTrainingVecs = numCentroidsPerCodebookList[j] * 39;
+      testTrain(dList[i], numCentroidsPerCodebookList[j], numTrainingVecs);
+    }
+  }
+}
+
+TEST(TestGpuMultiIndex2, testSearch) {
+  int d, numCentroidsPerCodebook, k, numOfQueries, numOfTrainingVecs;
+  d = 4;
+  numCentroidsPerCodebook = 16;
+  k = 8;
+  numOfQueries = 1024;
+  numOfTrainingVecs = numCentroidsPerCodebook * 39;
+  testSearch(d, numCentroidsPerCodebook, k, numOfQueries, numOfTrainingVecs);
+}
+
+TEST(TestGpuMultiIndex2, testComputeResidualPair) {
+  std::vector<int> dList = {2, 4};
+  std::vector<int> numCentroidsPerCodebookList = {1, 2};
+  for (int i = 0; i < dList.size(); i++) {
+    for (int j = 0; j < numCentroidsPerCodebookList.size(); j++) {
+      testComputeResidualPair(dList[i], numCentroidsPerCodebookList[j]);
+    }
+  }
+}
+
+TEST(TestGpuMultiIndex2, testComputeResidualNearestN) {
+  std::vector<int> dList = {2, 4};
+  std::vector<int> numCentroidsPerCodebookList = {1, 2};
+  for (int i = 0; i < dList.size(); i++) {
+    for (int j = 0; j < numCentroidsPerCodebookList.size(); j++) {
+      testComputeResidualNearestN(dList[i], numCentroidsPerCodebookList[j]);
+    }
+  }
+}
+
 TEST(TestGpuMultiIndex2, copyFrom) {
   std::vector<int> dList = {2, 4};
   std::vector<int> nbitsList = {0, 2};
@@ -360,67 +316,6 @@ TEST(TestGpuMultiIndex2, copyTo) {
       int numTrainingVecs = numCentroidsPerCodebookList[j] * 39;
       testCopyTo(dList[i], nbitsList[j], numCentroidsPerCodebookList[j],
                  numTrainingVecs);
-    }
-  }
-}
-
-TEST(TestGpuMultiIndex2, testTrain) {
-  std::vector<int> dList = {2, 4};
-  std::vector<int> numCentroidsPerCodebookList = {1, 2};
-  for (int i = 0; i < dList.size(); i++) {
-    for (int j = 0; j < numCentroidsPerCodebookList.size(); j++) {
-      int numTrainingVecs = numCentroidsPerCodebookList[j] * 39;
-      testTrain(dList[i], numCentroidsPerCodebookList[j], numTrainingVecs);
-    }
-  }
-}
-
-TEST(TestGpuMultiIndex2, testSearch) {
-  int d, numCentroidsPerCodebook, k, numOfQueries, numOfTrainingVecs;
-  d = 4;
-  numCentroidsPerCodebook = 16;
-  k = 8;
-  numOfQueries = 1024;
-  numOfTrainingVecs = numCentroidsPerCodebook * 39;
-  testSearch(d, numCentroidsPerCodebook, k, numOfQueries, numOfTrainingVecs);
-}
-
-TEST(TestGpuMultiIndex2, compareCpuWithGpu) {
-  int d, nbits, k, numOfQueries, numOfTrainingVecs;
-  d = 4;
-  nbits = 4;
-  k = 8;
-  numOfQueries = 1024;
-  numOfTrainingVecs = (1 << nbits) * 39;
-  compareCpuWithGpu(d, nbits, k, numOfQueries, numOfTrainingVecs);
-}
-
-TEST(TestGpuMultiIndex2, compareFlatWithMultiIndex) {
-  int d, numCentroidsPerCodebook, numOfQueries, numOfTrainingVecs;
-  d = 4;
-  numCentroidsPerCodebook = 16;
-  numOfQueries = 1024;
-  numOfTrainingVecs = numCentroidsPerCodebook * 39;
-  compareFlatWithMultiIndex(d, numCentroidsPerCodebook, numOfQueries,
-                            numOfTrainingVecs);
-}
-
-TEST(TestGpuMultiIndex2, testComputeResidualPair) {
-  std::vector<int> dList = {2, 4};
-  std::vector<int> numCentroidsPerCodebookList = {1, 2};
-  for (int i = 0; i < dList.size(); i++) {
-    for (int j = 0; j < numCentroidsPerCodebookList.size(); j++) {
-      testComputeResidualPair(dList[i], numCentroidsPerCodebookList[j]);
-    }
-  }
-}
-
-TEST(TestGpuMultiIndex2, testComputeResidualNearestN) {
-  std::vector<int> dList = {2, 4};
-  std::vector<int> numCentroidsPerCodebookList = {1, 2};
-  for (int i = 0; i < dList.size(); i++) {
-    for (int j = 0; j < numCentroidsPerCodebookList.size(); j++) {
-      testComputeResidualNearestN(dList[i], numCentroidsPerCodebookList[j]);
     }
   }
 }
