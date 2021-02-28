@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <faiss/Clustering.h>
 #include <faiss/MetricType.h>
+#include <faiss/gpu/GpuIndexFlat.h>
 #include <faiss/gpu/GpuMultiIndex2.h>
 #include <faiss/gpu/impl/MultiIndex2.cuh>
 #include <faiss/gpu/utils/CopyUtils.cuh>
@@ -37,7 +38,7 @@ GpuMultiIndex2::GpuMultiIndex2(GpuResourcesProvider *provider,
                index->metric_arg, config),
       numVecsPerCodebook_(0), subDim_(index->d / GpuMultiIndex2::NUM_CODEBOOKS),
       config_(config) {
-  FAISS_ASSERT(index->d % GpuMultiIndex2::NUM_CODEBOOKS == 0);
+  init_();
   copyFrom(index);
 }
 
@@ -48,7 +49,7 @@ GpuMultiIndex2::GpuMultiIndex2(std::shared_ptr<GpuResources> resources,
                config),
       numVecsPerCodebook_(0), subDim_(index->d / GpuMultiIndex2::NUM_CODEBOOKS),
       config_(config) {
-  FAISS_ASSERT(index->d % GpuMultiIndex2::NUM_CODEBOOKS == 0);
+  init_();
   copyFrom(index);
 }
 
@@ -59,7 +60,7 @@ GpuMultiIndex2::GpuMultiIndex2(GpuResourcesProvider *provider, int dims,
                config),
       numVecsPerCodebook_(numVecsPerCodebook_),
       subDim_(dims / GpuMultiIndex2::NUM_CODEBOOKS), config_(config) {
-  FAISS_ASSERT(dims % GpuMultiIndex2::NUM_CODEBOOKS == 0);
+  init_();
   this->is_trained = false;
   DeviceScope scope(config_.device);
   data_.reset(new MultiIndex2(resources_.get(), dims, config_.memorySpace));
@@ -71,10 +72,19 @@ GpuMultiIndex2::GpuMultiIndex2(std::shared_ptr<GpuResources> resources,
     : GpuIndex(resources, dims, faiss::MetricType::METRIC_L2, 0, config),
       numVecsPerCodebook_(numVecsPerCodebook_),
       subDim_(dims / GpuMultiIndex2::NUM_CODEBOOKS), config_(config) {
-  FAISS_ASSERT(dims % GpuMultiIndex2::NUM_CODEBOOKS == 0);
+  init_();
   this->is_trained = false;
   DeviceScope scope(config_.device);
   data_.reset(new MultiIndex2(resources_.get(), dims, config_.memorySpace));
+}
+
+void GpuMultiIndex2::init_() {
+  FAISS_ASSERT(this->d % GpuMultiIndex2::NUM_CODEBOOKS == 0);
+
+  // here we set a low # iterations because this is typically used
+  // for large clusterings
+  cp.niter = 10;
+  cp.verbose = verbose;
 }
 
 GpuMultiIndex2::~GpuMultiIndex2() {}
@@ -209,6 +219,7 @@ void GpuMultiIndex2::train(Index::idx_t n, const float *x) {
   FAISS_ASSERT(n > 0);
 
   DeviceScope scope(config_.device);
+  auto stream = resources_->getDefaultStream(config_.device);
 
   // If it is trained, just resets and re-trains it
   if (this->is_trained) {
@@ -220,19 +231,46 @@ void GpuMultiIndex2::train(Index::idx_t n, const float *x) {
   fvec_split(subQueries, GpuMultiIndex2::NUM_CODEBOOKS, x, (size_t)n, subDim_);
 
   int numSubCentroids = GpuMultiIndex2::NUM_CODEBOOKS * numVecsPerCodebook_;
-  float *subCentroids = new float[(unsigned long)numSubCentroids * subDim_];
-  ScopeDeleter<float> delSubCentroids(subCentroids);
+  // float *subCentroids = new float[(unsigned long)numSubCentroids * subDim_];
+  // ScopeDeleter<float> delSubCentroids(subCentroids);
 
-#pragma omp parallel for
+  DeviceTensor<float, 1, true> subCentroids(
+      resources_.get(), makeTempAlloc(AllocType::Other, stream),
+      {numSubCentroids * subDim_});
+
+  GpuIndexFlatConfig flatConfig;
+  flatConfig.device = config_.device;
+
+  std::vector<std::unique_ptr<GpuIndexFlatL2>> codebookList(
+      GpuMultiIndex2::NUM_CODEBOOKS);
+
   for (int i = 0; i < GpuMultiIndex2::NUM_CODEBOOKS; i++) {
-    kmeans_clustering(
-        subDim_, (size_t)n, numVecsPerCodebook_, subQueries + (i * n * subDim_),
-        subCentroids + (i * numVecsPerCodebook_ * subDim_), this->verbose);
-  }
-  data_->add(subCentroids, numSubCentroids,
-             resources_->getDefaultStream(config_.device));
+    codebookList[i].reset(new GpuIndexFlatL2(resources_, subDim_, flatConfig));
 
-  CudaEvent addEnd(resources_->getDefaultStream(config_.device));
+    Clustering clus(subDim_, numVecsPerCodebook_, this->cp);
+    clus.verbose = verbose;
+
+    const float *currentSubCentroids = subQueries + (i * n * subDim_);
+
+    clus.train(n, currentSubCentroids, codebookList[i].get());
+    codebookList[i]->is_trained = true;
+
+    fromDevice<float, 2>(codebookList[i]->getGpuData()->getVectorsFloat32Ref(),
+                         subCentroids.data() + numVecsPerCodebook_ * subDim_,
+                         stream);
+  }
+
+  // #pragma omp parallel for
+  //   for (int i = 0; i < GpuMultiIndex2::NUM_CODEBOOKS; i++) {
+  //     kmeans_clustering(
+  //         subDim_, (size_t)n, numVecsPerCodebook_, subQueries + (i * n *
+  //         subDim_), subCentroids + (i * numVecsPerCodebook_ * subDim_),
+  //         this->verbose);
+  //   }
+
+  data_->add(subCentroids.data(), numSubCentroids, stream);
+
+  CudaEvent addEnd(stream);
 
   this->ntotal = 1;
   for (int i = 0; i < GpuMultiIndex2::NUM_CODEBOOKS; i++) {

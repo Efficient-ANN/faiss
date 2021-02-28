@@ -44,6 +44,7 @@ public:
 
   ~GpuMultiIndex2() override;
 
+public:
   static size_t calcMemorySpaceSize(int numVecsTotal, int dimPerCodebook,
                                     bool useFloat16);
 
@@ -112,6 +113,9 @@ public:
 
   static const int NUM_CODEBOOKS;
 
+  /// Exposing this for manipulation
+  ClusteringParameters cp;
+
 protected:
   bool addImplRequiresIDs_() const override;
 
@@ -132,6 +136,8 @@ protected:
   std::unique_ptr<MultiIndex2> data_;
 
 private:
+  /// Shared initialization functions
+  void init_();
   /// Calls searchImpl_ for a single page of GPU-resident data
   void searchNonPaged_(int n, const float *x, int k, float *outDistancesData,
                        Index::idx_t *outIndicesData) const;
