@@ -256,7 +256,7 @@ void GpuMultiIndex2::train(Index::idx_t n, const float *x) {
     FAISS_ASSERT(codebookVecs.numElements() == numVecsPerCodebook_ * subDim_);
 
     fromDevice<float>(codebookVecs.data(),
-                      subCentroids.data() + numVecsPerCodebook_ * subDim_,
+                      subCentroids.data() + i * numVecsPerCodebook_ * subDim_,
                       codebookVecs.numElements(), stream);
   }
 
