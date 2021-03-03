@@ -113,8 +113,9 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
       FILE *f = fopen(fileNameCoarseQuantizer.c_str(), "rb");
       if (f) {
         fclose(f);
-        faiss::Index *cpu_index = dynamic_cast<faiss::MultiIndexQuantizer *>(
-            faiss::read_index(fileNameCoarseQuantizer.c_str()));
+        faiss::MultiIndexQuantizer *cpu_index =
+            dynamic_cast<faiss::MultiIndexQuantizer *>(
+                faiss::read_index(fileNameCoarseQuantizer.c_str()));
         imipqGpu.quantizer->copyFrom(cpu_index);
         delete cpu_index;
         storeCoarseQuantizer = false;

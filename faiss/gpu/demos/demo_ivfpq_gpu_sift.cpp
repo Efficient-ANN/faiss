@@ -114,7 +114,7 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
     FILE *f = fopen(fileNameIndex.c_str(), "rb");
     if (f) {
       fclose(f);
-      faiss::Index *cpu_index = dynamic_cast<faiss::IndexIVFPQ *>(
+      faiss::IndexIVFPQ *cpu_index = dynamic_cast<faiss::IndexIVFPQ *>(
           faiss::read_index(fileNameIndex.c_str()));
       ivfpq = dynamic_cast<faiss::gpu::GpuIndexIVFPQ *>(
           faiss::gpu::index_gpu_to_cpu(cpu_index));
