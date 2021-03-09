@@ -87,11 +87,11 @@ StandardGpuResourcesImpl::StandardGpuResourcesImpl(size_t fixedMemSize)
       pinnedMemSize_(kDefaultPinnedMemoryAllocation), allocLogging_(false) {}
 
 StandardGpuResourcesImpl::~StandardGpuResourcesImpl() {
+  fixedMemory_.clear();
+
   // The temporary memory allocator has allocated memory through us, so clean
   // that up before we finish fully de-initializing ourselves
   tempMemory_.clear();
-
-  fixedMemory_.clear();
 
   // Make sure all allocations have been freed
   bool allocError = false;
@@ -359,6 +359,12 @@ StandardGpuResourcesImpl::initializeForDevice(int device) {
   FAISS_ASSERT(allocs_.count(device) == 0);
   allocs_[device] = std::unordered_map<void*, AllocRequest>();
 
+  FAISS_ASSERT(fixedMemory_.count(device) == 0);
+  auto fixedMem = std::unique_ptr<FixedDeviceMemory>(
+      new FixedDeviceMemory(this, device, fixedMemSize_));
+
+  fixedMemory_.emplace(device, std::move(fixedMem));
+
   FAISS_ASSERT(tempMemory_.count(device) == 0);
   auto mem = std::unique_ptr<StackDeviceMemory>(
     new StackDeviceMemory(this,
@@ -367,12 +373,6 @@ StandardGpuResourcesImpl::initializeForDevice(int device) {
                           getDefaultTempMemForGPU(device, tempMemSize_)));
 
   tempMemory_.emplace(device, std::move(mem));
-
-  FAISS_ASSERT(fixedMemory_.count(device) == 0);
-  auto fixedMem = std::unique_ptr<FixedDeviceMemory>(
-      new FixedDeviceMemory(this, device, fixedMemSize_));
-
-  fixedMemory_.emplace(device, std::move(fixedMem));
 }
 
 cublasHandle_t

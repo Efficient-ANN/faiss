@@ -21,8 +21,8 @@ FixedDeviceMemory::FixedDeviceMemory(GpuResources *res, int device,
     return;
   }
 
-  allocSize_ += 16;
-  offset_ += 16;
+  allocSize_ += 256;
+  offset_ += 256;
   DeviceScope s(device_);
   auto defaultStream = res_->getDefaultStream(device_);
   auto req =

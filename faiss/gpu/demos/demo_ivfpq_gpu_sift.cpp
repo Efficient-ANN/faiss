@@ -18,6 +18,7 @@
 #include <faiss/gpu/GpuIndicesOptions.h>
 #include <faiss/gpu/StandardGpuResources.h>
 #include <faiss/gpu/utils/DeviceUtils.h>
+#include <faiss/gpu/utils/StaticUtils.h>
 #include <faiss/index_io.h>
 #include <faiss/utils/vecs_storage.h>
 #include <iomanip>
@@ -78,6 +79,24 @@ void search(faiss::gpu::StandardGpuResources *res, faiss::Index *index,
   }
 }
 
+size_t calcIvfStructureMemSize(size_t d, size_t coarseCodebookSize,
+                               size_t numSubQuantizers,
+                               size_t nbitsSubQuantizer) {
+  size_t subCodebookSize = 1 << nbitsSubQuantizer;
+  size_t coarseQuantizerMemSize = d * coarseCodebookSize * sizeof(float);
+  size_t normMemSize = coarseCodebookSize * sizeof(float);
+  size_t productQuantizerMemSize =
+      d * subCodebookSize * numSubQuantizers * sizeof(float);
+  size_t precomputedMemSize =
+      coarseCodebookSize * subCodebookSize * numSubQuantizers * sizeof(float);
+  size_t codesPointersMemSize = coarseCodebookSize * sizeof(void *);
+  size_t idsPointersMemSize = coarseCodebookSize * sizeof(void *);
+  size_t listsLengthsMemSize = coarseCodebookSize * sizeof(int);
+  return subCodebookSize + coarseQuantizerMemSize + normMemSize +
+         productQuantizerMemSize + precomputedMemSize + codesPointersMemSize +
+         idsPointersMemSize + listsLengthsMemSize;
+}
+
 template <bool isVecFloat>
 void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
                 int nbitsSubQuantizer, std::string fileNameTraining,
@@ -88,16 +107,42 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
                 int nprobeEnd, int kBegin, int kEnd, bool usePrecomputed,
                 std::string fileNameCoarseQuantizer,
                 std::string fileNameIndex) {
+
+  size_t devFree = 0;
+  size_t devTotal = 0;
+
+  CUDA_VERIFY(cudaMemGetInfo(&devFree, &devTotal));
+  std::cout << "-------Memory-------" << std::endl;
+  std::cout << "Free: " << devFree << std::endl;
+  std::cout << "Total: " << devTotal << std::endl;
+
   faiss::gpu::IndicesOptions indiceOptions = faiss::gpu::INDICES_32_BIT;
+  /*
   size_t fixedMemSize = faiss::gpu::GpuIndexIVFPQ::calcMemorySpaceSize(
       coarseCodebookSize, d, false, numIndexingVecs, numSubQuantizers,
       nbitsSubQuantizer, false, indiceOptions);
+  */
+  size_t fixedMemSize = faiss::gpu::GpuIndexIVFPQ::calcInvListsMemorySpaceSize(
+      numIndexingVecs, numSubQuantizers, nbitsSubQuantizer, false,
+      indiceOptions);
+  std::cout << "fixedMemSize: " << fixedMemSize << std::endl;
+
+  size_t ivfStructureMemSize = calcIvfStructureMemSize(
+      d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer);
+  std::cout << "ivfStructureMemSize: " << ivfStructureMemSize << std::endl;
 
   faiss::gpu::StandardGpuResources res(fixedMemSize);
-  faiss::gpu::GpuIndexIVFPQConfig config;
+  constexpr size_t safeMargin = 16 * 1024 * 1024; // 16MB
+  size_t tempMemory =
+      devFree - faiss::gpu::utils::roundUp(fixedMemSize + 256, (size_t)256) -
+      faiss::gpu::utils::roundUp(ivfStructureMemSize, (size_t)256) - safeMargin;
   // res.noTempMemory();
+  res.setTempMemory(tempMemory);
+  std::cout << "tempMemory: " << tempMemory << std::endl;
+
+  faiss::gpu::GpuIndexIVFPQConfig config;
   config.memorySpace = faiss::gpu::MemorySpace::Fixed;
-  config.flatConfig.memorySpace = faiss::gpu::MemorySpace::Fixed;
+  // config.flatConfig.memorySpace = faiss::gpu::MemorySpace::Fixed;
   config.indicesOptions = indiceOptions;
   config.usePrecomputedTables = usePrecomputed;
   int nlist = coarseCodebookSize;
@@ -105,8 +150,6 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
   clock_t tStart, tEnd;
   double tGpu;
   int dRead;
-  size_t devFree = 0;
-  size_t devTotal = 0;
 
   bool isLoadead = false;
 
@@ -133,7 +176,7 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
         FILE *f = fopen(fileNameCoarseQuantizer.c_str(), "rb");
         if (f) {
           fclose(f);
-          faiss::Index *cpu_index = dynamic_cast<faiss::IndexFlat *>(
+          faiss::IndexFlat *cpu_index = dynamic_cast<faiss::IndexFlat *>(
               faiss::read_index(fileNameCoarseQuantizer.c_str()));
           ivfpq->quantizer->copyFrom(cpu_index);
           delete cpu_index;
@@ -264,9 +307,6 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
       faiss::ivecs_read(fileNameGroundTruth.c_str(),
                         numQueriesList[numQueriesEnd - 1], 0, &dRead);
 
-  size_t devFree = 0;
-  size_t devTotal = 0;
-
   CUDA_VERIFY(cudaMemGetInfo(&devFree, &devTotal));
   std::cout << "-------Memory-------" << std::endl;
   std::cout << "Free: " << devFree << std::endl;
@@ -330,14 +370,6 @@ int main(int argc, char **argv) {
   omp_set_num_threads(numThreads);
 
   std::cout << std::setprecision(6) << std::fixed;
-
-  size_t devFree = 0;
-  size_t devTotal = 0;
-
-  CUDA_VERIFY(cudaMemGetInfo(&devFree, &devTotal));
-  std::cout << "-------Memory-------" << std::endl;
-  std::cout << "Free: " << devFree << std::endl;
-  std::cout << "Total: " << devTotal << std::endl;
 
   if (isFloat == 1) {
     demo_ivfpq<true>(d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer,

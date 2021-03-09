@@ -16,6 +16,7 @@
 #include <faiss/gpu/GpuIndicesOptions.h>
 #include <faiss/gpu/StandardGpuResources.h>
 #include <faiss/gpu/utils/DeviceUtils.h>
+#include <faiss/gpu/utils/StaticUtils.h>
 #include <faiss/index_io.h>
 #include <faiss/utils/vecs_storage.h>
 #include <iomanip>
@@ -76,6 +77,27 @@ void search(faiss::gpu::StandardGpuResources *res, faiss::Index *index,
   }
 }
 
+size_t calcImiStructureMemSize(size_t d, size_t coarseCodebookSize,
+                               size_t numSubQuantizers,
+                               size_t nbitsSubQuantizer) {
+  size_t subCodebookSize = 1 << nbitsSubQuantizer;
+  size_t coarseQuantizerMemSize = d * coarseCodebookSize * sizeof(float);
+  size_t normMemSize = 2 * coarseCodebookSize * sizeof(float);
+  size_t productQuantizerMemSize =
+      d * subCodebookSize * numSubQuantizers * sizeof(float);
+  size_t precomputedMemSize =
+      coarseCodebookSize * subCodebookSize * numSubQuantizers * sizeof(float);
+  size_t codesPointersMemSize =
+      coarseCodebookSize * coarseCodebookSize * sizeof(void *);
+  size_t idsPointersMemSize =
+      coarseCodebookSize * coarseCodebookSize * sizeof(void *);
+  size_t listsLengthsMemSize =
+      coarseCodebookSize * coarseCodebookSize * sizeof(int);
+  return subCodebookSize + coarseQuantizerMemSize + normMemSize +
+         productQuantizerMemSize + precomputedMemSize + codesPointersMemSize +
+         idsPointersMemSize + listsLengthsMemSize;
+}
+
 template <bool isVecFloat>
 void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
                 int nbitsSubQuantizer, std::string fileNameTraining,
@@ -85,27 +107,49 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
                 int numQueriesBegin, int numQueriesEnd, int nprobeBegin,
                 int nprobeEnd, int kBegin, int kEnd,
                 std::string fileNameCoarseQuantizer) {
+  size_t devFree = 0;
+  size_t devTotal = 0;
+
+  CUDA_VERIFY(cudaMemGetInfo(&devFree, &devTotal));
+  std::cout << "-------Memory-------" << std::endl;
+  std::cout << "Free: " << devFree << std::endl;
+  std::cout << "Total: " << devTotal << std::endl;
+
   faiss::gpu::IndicesOptions indiceOptions = faiss::gpu::INDICES_32_BIT;
+  /*
   size_t fixedMemSize = faiss::gpu::GpuIndexIMIPQ::calcMemorySpaceSize(
       coarseCodebookSize * 2, d / 2, false, numIndexingVecs, numSubQuantizers,
       nbitsSubQuantizer, false, indiceOptions);
+  */
+  size_t fixedMemSize = faiss::gpu::GpuIndexIMIPQ::calcInvListsMemorySpaceSize(
+      numIndexingVecs, numSubQuantizers, nbitsSubQuantizer, false,
+      indiceOptions);
+  std::cout << "fixedMemSize: " << fixedMemSize << std::endl;
+
+  size_t imiStructureMemSize = calcImiStructureMemSize(
+      d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer);
+  std::cout << "imiStructureMemSize: " << imiStructureMemSize << std::endl;
+
   faiss::gpu::StandardGpuResources res(fixedMemSize);
-  faiss::gpu::GpuIndexIMIPQConfig config;
-
-  std::cout << "fixedMemSize:" << fixedMemSize << std::endl;
-
+  constexpr size_t safeMargin = 16 * 1024 * 1024; // 16MB
+  size_t tempMemory =
+      devFree - faiss::gpu::utils::roundUp(fixedMemSize + 256, (size_t)256) -
+      faiss::gpu::utils::roundUp(imiStructureMemSize, (size_t)256) - safeMargin;
   // res.noTempMemory();
+  res.setTempMemory(tempMemory);
+  std::cout << "tempMemory: " << tempMemory << std::endl;
+
+  faiss::gpu::GpuIndexIMIPQConfig config;
   config.memorySpace = faiss::gpu::MemorySpace::Fixed;
-  config.multiIndexConfig.memorySpace = faiss::gpu::MemorySpace::Fixed;
+  // config.multiIndexConfig.memorySpace = faiss::gpu::MemorySpace::Fixed;
   config.indicesOptions = indiceOptions;
   config.usePrecomputedTables = true;
+
   faiss::gpu::GpuIndexIMIPQ imipqGpu(
       &res, d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer, config);
   clock_t tStart, tEnd;
   double tGpu;
   int dRead;
-  size_t devFree = 0;
-  size_t devTotal = 0;
 
   { // train
     bool storeCoarseQuantizer = true;
@@ -294,14 +338,6 @@ int main(int argc, char **argv) {
   omp_set_num_threads(numThreads);
 
   std::cout << std::setprecision(6) << std::fixed;
-
-  size_t devFree = 0;
-  size_t devTotal = 0;
-
-  CUDA_VERIFY(cudaMemGetInfo(&devFree, &devTotal));
-  std::cout << "-------Memory-------" << std::endl;
-  std::cout << "Free: " << devFree << std::endl;
-  std::cout << "Total: " << devTotal << std::endl;
 
   if (isFloat == 1) {
     demo_imipq<true>(d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer,
