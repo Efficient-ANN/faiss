@@ -222,16 +222,55 @@ void testUnifiedIndex(int w, int numOfQueries,
   delete[] ir;
 }
 
-TEST(TestGpuMultiSequence2, test) {
-  for (int w = 1; w <= 1024; w *= 2) {
-    for (int numOfQueries = 1; numOfQueries <= 2048; numOfQueries *= 2) {
-      test<ushort, ushort2>(w, numOfQueries, w);
+TEST(TestGpuMultiSequence2, testWEqualKShort) {
+  std::vector<int> wList = {1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024};
+  std::vector<int> nuMQuerisList = {1, 1024, 32768};
+  for (int i = 0; i < wList.size(); i++) {
+    for (int j = 0; j < nuMQuerisList.size(); j++) {
+      test<ushort, ushort2>(wList[i], nuMQuerisList[j], wList[i]);
     }
   }
 }
 
-TEST(TestGpuMultiSequence2, testTile) {
-  test<ushort, ushort2>(256, 1024 * 32, 1024);
+TEST(TestGpuMultiSequence2, testWLowerThanKShort) {
+  std::vector<int> kList = {2, 4, 8, 16, 32, 64, 128, 256, 512, 1024};
+  for (int i = 0; i < kList.size(); i++) {
+    test<ushort, ushort2>(kList[i] / 2, 1024, kList[i]);
+  }
+}
+
+TEST(TestGpuMultiSequence2, testWEqualKInt) {
+  std::vector<int> wList = {1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024};
+  std::vector<int> nuMQuerisList = {1, 1024, 32768};
+  for (int i = 0; i < wList.size(); i++) {
+    for (int j = 0; j < nuMQuerisList.size(); j++) {
+      test<int, int2>(wList[i], nuMQuerisList[j], wList[i]);
+    }
+  }
+}
+
+TEST(TestGpuMultiSequence2, testWLowerThanKInt) {
+  std::vector<int> kList = {2, 4, 8, 16, 32, 64, 128, 256, 512, 1024};
+  for (int i = 0; i < kList.size(); i++) {
+    test<int, int2>(kList[i] / 2, 1024, kList[i]);
+  }
+}
+
+TEST(TestGpuMultiSequence2, testWEqualKUnified) {
+  std::vector<int> wList = {1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024};
+  std::vector<int> nuMQuerisList = {1, 1024, 32768};
+  for (int i = 0; i < wList.size(); i++) {
+    for (int j = 0; j < nuMQuerisList.size(); j++) {
+      testUnifiedIndex<ushort>(wList[i], nuMQuerisList[j], wList[i], wList[i]);
+    }
+  }
+}
+
+TEST(TestGpuMultiSequence2, testWLowerThanKUnified) {
+  std::vector<int> kList = {2, 4, 8, 16, 32, 64, 128, 256, 512, 1024};
+  for (int i = 0; i < kList.size(); i++) {
+    testUnifiedIndex<ushort>(kList[i] / 2, 1024, kList[i], kList[i]);
+  }
 }
 
 TEST(TestGpuMultiSequence2, testLimits) {
@@ -241,21 +280,6 @@ TEST(TestGpuMultiSequence2, testLimits) {
   test<ushort, ushort2>(200, 1024, 64);
   test<ushort, ushort2>(2048, 1, 1024);
   test<ushort, ushort2>(2048, 1024, 1024);
-}
-
-TEST(TestGpuMultiSequence2, testInt) {
-  test<int, int2>(1, 256, 256);
-  test<int, int2>(2, 256, 256);
-  test<int, int2>(4, 256, 256);
-  test<int, int2>(8, 256, 256);
-  test<int, int2>(32, 256, 256);
-}
-
-TEST(TestGpuMultiSequence2, testUnified) {
-  testUnifiedIndex<ushort>(1, 256, 256, 256);
-  testUnifiedIndex<ushort>(4, 256, 256, 256);
-  testUnifiedIndex<ushort>(32, 256, 256, 256);
-  testUnifiedIndex<ushort>(1024, 256, 256, 256);
 }
 
 int main(int argc, char **argv) {

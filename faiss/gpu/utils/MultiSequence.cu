@@ -615,43 +615,6 @@ void chooseMultiSequence2Params(const int inLength, bool &useSharedMemory,
 }
 
 template <typename T, typename TVec2>
-int calculateMultiSequenceSizePerQuery(int inLength, bool useSharedMemory) {
-  int sizePerQuery =
-      inLength * (3 * sizeof(float) + 2 * sizeof(T) + sizeof(TVec2));
-  if (!useSharedMemory) {
-    if (inLength > 1) {
-      int nextHighestPowerOf2 = utils::nextHighestPowerOf2(inLength);
-      if (inLength != nextHighestPowerOf2 / 2) {
-        inLength = nextHighestPowerOf2;
-      }
-    }
-    sizePerQuery +=
-        inLength * (sizeof(float) + sizeof(ushort2) + sizeof(unsigned short));
-  }
-  return sizePerQuery;
-}
-
-int calculateMultiSequenceMinQueryTileSize(int sizePerQuery) {
-  constexpr int MIN_MEMORY = 1024 * 1024 * 128;
-  int minQueryTileSize = MIN_MEMORY / sizePerQuery;
-  int nextHighestPowerOf2 = utils::nextHighestPowerOf2(minQueryTileSize);
-  if (minQueryTileSize != nextHighestPowerOf2 / 2) {
-    minQueryTileSize = nextHighestPowerOf2;
-  }
-  return minQueryTileSize;
-}
-
-int calculateMultiSequenceQueryTileSize(unsigned long sizeAvailable,
-                                        int sizePerQuery) {
-  int queryTileSize = (int)(sizeAvailable / sizePerQuery);
-  int minQueryTileSize = calculateMultiSequenceMinQueryTileSize(sizePerQuery);
-  if (queryTileSize < minQueryTileSize) {
-    queryTileSize = minQueryTileSize;
-  }
-  return queryTileSize;
-}
-
-template <typename T, typename TVec2>
 void runMultiSequence2T(const int &w, Tensor<float, 3, true> &inDistances,
                         Tensor<T, 3, true> &inIndices,
                         Tensor<float, 2, true> &outDistances,
@@ -659,7 +622,6 @@ void runMultiSequence2T(const int &w, Tensor<float, 3, true> &inDistances,
   constexpr int NUM_CODEBOOKS = 2;
 
   auto stream = res->getDefaultStreamCurrentDevice();
-  unsigned long sizeAvailable = res->getTempMemoryAvailableCurrentDevice();
 
   FAISS_ASSERT(inDistances.getSize(0) == NUM_CODEBOOKS);
   FAISS_ASSERT(inIndices.getSize(0) == NUM_CODEBOOKS);
@@ -687,68 +649,50 @@ void runMultiSequence2T(const int &w, Tensor<float, 3, true> &inDistances,
     chooseMultiSequence2Params<T, TVec2>(inLength, useSharedMemory, blockSize);
   }
 
-  int sizePerQuery =
-      calculateMultiSequenceSizePerQuery<T, TVec2>(inLength, useSharedMemory);
-  int queryTileSize =
-      calculateMultiSequenceQueryTileSize(sizeAvailable, sizePerQuery);
+  const int numQueries = inDistances.getSize(1);
+  blockSize = std::min(blockSize, numQueries);
+  const int numOfBlocks = (numQueries + blockSize - 1) / blockSize;
+  const int numThreadsGrid =
+      blockSize * (int)(numQueries / blockSize) + (numQueries % blockSize);
 
-  int numQueriesPerCodebook = inDistances.getSize(1);
-  int numQueries, numOfBlocks, numThreadsGrid;
-  for (int query = 0; query < numQueriesPerCodebook; query += queryTileSize) {
-    numQueries = std::min(queryTileSize, numQueriesPerCodebook - query);
-    blockSize = std::min(blockSize, numQueries);
-    numOfBlocks = (numQueries + blockSize - 1) / blockSize;
-    numThreadsGrid =
-        blockSize * (int)(numQueries / blockSize) + (numQueries % blockSize);
+  auto inDistances1View = inDistances[0].view();
+  auto inDistances2View = inDistances[1].view();
+  auto inIndices1View = inIndices[0].view();
+  auto inIndices2View = inIndices[1].view();
 
-    auto inDistances1View =
-        inDistances[0].view().narrowOutermost(query, numQueries);
-    auto inDistances2View =
-        inDistances[1].view().narrowOutermost(query, numQueries);
-    auto inIndices1View =
-        inIndices[0].view().narrowOutermost(query, numQueries);
-    auto inIndices2View =
-        inIndices[1].view().narrowOutermost(query, numQueries);
-    auto outDistancesView = outDistances.narrowOutermost(query, numQueries);
-    auto outIndicesView = outIndices.narrowOutermost(query, numQueries);
-
-    if (useSharedMemory) {
-      int smem;
-      if (w <= inLength) {
-        smem = blockSize * w *
-               (sizeof(float) + sizeof(ushort2) + sizeof(unsigned short));
-        FAISS_ASSERT(smem <= getMaxSharedMemPerBlockCurrentDevice());
-        multiSequence_shared<T, TVec2>
-            <<<numOfBlocks, blockSize, smem, stream>>>(
-                numThreadsGrid, w, inDistances1View.data(),
-                inIndices1View.data(), inDistances2View.data(),
-                inIndices2View.data(), outDistancesView.data(),
-                outIndicesView.data());
-      } else {
-        smem = blockSize * inLength *
-               (sizeof(float) + sizeof(ushort2) + sizeof(unsigned short));
-        FAISS_ASSERT(smem <= getMaxSharedMemPerBlockCurrentDevice());
-        multiSequence_shared<T, TVec2>
-            <<<numOfBlocks, blockSize, smem, stream>>>(
-                numThreadsGrid, w, inLength, inDistances1View.data(),
-                inIndices1View.data(), inDistances2View.data(),
-                inIndices2View.data(), outDistancesView.data(),
-                outIndicesView.data());
-      }
+  if (useSharedMemory) {
+    if (w <= inLength) {
+      const int smem =
+          blockSize * w *
+          (sizeof(float) + sizeof(ushort2) + sizeof(unsigned short));
+      FAISS_ASSERT(smem <= getMaxSharedMemPerBlockCurrentDevice());
+      multiSequence_shared<T, TVec2><<<numOfBlocks, blockSize, smem, stream>>>(
+          numThreadsGrid, w, inDistances1View.data(), inIndices1View.data(),
+          inDistances2View.data(), inIndices2View.data(), outDistances.data(),
+          outIndices.data());
     } else {
-      if (w <= inLength) {
-        multiSequenceLocalKernel<T, TVec2>(
-            numOfBlocks, blockSize, stream, numThreadsGrid, w,
-            inDistances1View.data(), inIndices1View.data(),
-            inDistances2View.data(), inIndices2View.data(),
-            outDistancesView.data(), outIndicesView.data());
-      } else {
-        multiSequenceLocalKernel<T, TVec2>(
-            numOfBlocks, blockSize, stream, numThreadsGrid, w, inLength,
-            inDistances1View.data(), inIndices1View.data(),
-            inDistances2View.data(), inIndices2View.data(),
-            outDistancesView.data(), outIndicesView.data());
-      }
+      const int smem =
+          blockSize * inLength *
+          (sizeof(float) + sizeof(ushort2) + sizeof(unsigned short));
+      FAISS_ASSERT(smem <= getMaxSharedMemPerBlockCurrentDevice());
+      multiSequence_shared<T, TVec2><<<numOfBlocks, blockSize, smem, stream>>>(
+          numThreadsGrid, w, inLength, inDistances1View.data(),
+          inIndices1View.data(), inDistances2View.data(), inIndices2View.data(),
+          outDistances.data(), outIndices.data());
+    }
+  } else {
+    if (w <= inLength) {
+      multiSequenceLocalKernel<T, TVec2>(
+          numOfBlocks, blockSize, stream, numThreadsGrid, w,
+          inDistances1View.data(), inIndices1View.data(),
+          inDistances2View.data(), inIndices2View.data(), outDistances.data(),
+          outIndices.data());
+    } else {
+      multiSequenceLocalKernel<T, TVec2>(
+          numOfBlocks, blockSize, stream, numThreadsGrid, w, inLength,
+          inDistances1View.data(), inIndices1View.data(),
+          inDistances2View.data(), inIndices2View.data(), outDistances.data(),
+          outIndices.data());
     }
   }
 }
@@ -762,7 +706,6 @@ void runMultiSequence2T(const int &w, Tensor<float, 3, true> &inDistances,
   constexpr int NUM_CODEBOOKS = 2;
 
   auto stream = res->getDefaultStreamCurrentDevice();
-  unsigned long sizeAvailable = res->getTempMemoryAvailableCurrentDevice();
 
   FAISS_ASSERT(inDistances.getSize(0) == NUM_CODEBOOKS);
   FAISS_ASSERT(inIndices.getSize(0) == NUM_CODEBOOKS);
@@ -791,68 +734,53 @@ void runMultiSequence2T(const int &w, Tensor<float, 3, true> &inDistances,
                                                blockSize);
   }
 
-  int sizePerQuery = calculateMultiSequenceSizePerQuery<T, MultiIndexT>(
-      inLength, useSharedMemory);
-  int queryTileSize =
-      calculateMultiSequenceQueryTileSize(sizeAvailable, sizePerQuery);
+  const int numQueries = inDistances.getSize(1);
+  blockSize = std::min(blockSize, numQueries);
+  const int numOfBlocks = (numQueries + blockSize - 1) / blockSize;
+  const int numThreadsGrid =
+      blockSize * (int)(numQueries / blockSize) + (numQueries % blockSize);
 
-  int numQueriesPerCodebook = inDistances.getSize(1);
-  int numQueries, numOfBlocks, numThreadsGrid;
-  for (int query = 0; query < numQueriesPerCodebook; query += queryTileSize) {
-    numQueries = std::min(queryTileSize, numQueriesPerCodebook - query);
-    blockSize = std::min(blockSize, numQueries);
-    numOfBlocks = (numQueries + blockSize - 1) / blockSize;
-    numThreadsGrid =
-        blockSize * (int)(numQueries / blockSize) + (numQueries % blockSize);
+  auto inDistances1View = inDistances[0].view();
+  auto inDistances2View = inDistances[1].view();
+  auto inIndices1View = inIndices[0].view();
+  auto inIndices2View = inIndices[1].view();
 
-    auto inDistances1View =
-        inDistances[0].view().narrowOutermost(query, numQueries);
-    auto inDistances2View =
-        inDistances[1].view().narrowOutermost(query, numQueries);
-    auto inIndices1View =
-        inIndices[0].view().narrowOutermost(query, numQueries);
-    auto inIndices2View =
-        inIndices[1].view().narrowOutermost(query, numQueries);
-    auto outDistancesView = outDistances.narrowOutermost(query, numQueries);
-    auto outIndicesView = outIndices.narrowOutermost(query, numQueries);
-
-    if (useSharedMemory) {
-      int smem;
-      if (w <= inLength) {
-        smem = blockSize * w *
-               (sizeof(float) + sizeof(ushort2) + sizeof(unsigned short));
-        FAISS_ASSERT(smem <= getMaxSharedMemPerBlockCurrentDevice());
-        multiSequence_shared<T, MultiIndexT>
-            <<<numOfBlocks, blockSize, smem, stream>>>(
-                numThreadsGrid, w, inDistances1View.data(),
-                inIndices1View.data(), inDistances2View.data(),
-                inIndices2View.data(), outDistancesView.data(), codebookSize,
-                outIndicesView.data());
-      } else {
-        smem = blockSize * inLength *
-               (sizeof(float) + sizeof(ushort2) + sizeof(unsigned short));
-        FAISS_ASSERT(smem <= getMaxSharedMemPerBlockCurrentDevice());
-        multiSequence_shared<T, MultiIndexT>
-            <<<numOfBlocks, blockSize, smem, stream>>>(
-                numThreadsGrid, w, inLength, inDistances1View.data(),
-                inIndices1View.data(), inDistances2View.data(),
-                inIndices2View.data(), outDistancesView.data(), codebookSize,
-                outIndicesView.data());
-      }
+  if (useSharedMemory) {
+    if (w <= inLength) {
+      const int smem =
+          blockSize * w *
+          (sizeof(float) + sizeof(ushort2) + sizeof(unsigned short));
+      FAISS_ASSERT(smem <= getMaxSharedMemPerBlockCurrentDevice());
+      multiSequence_shared<T, MultiIndexT>
+          <<<numOfBlocks, blockSize, smem, stream>>>(
+              numThreadsGrid, w, inDistances1View.data(), inIndices1View.data(),
+              inDistances2View.data(), inIndices2View.data(),
+              outDistances.data(), codebookSize, outIndices.data());
     } else {
-      if (w <= inLength) {
-        multiSequenceLocalKernel<T, MultiIndexT>(
-            numOfBlocks, blockSize, stream, numThreadsGrid, w,
-            inDistances1View.data(), inIndices1View.data(),
-            inDistances2View.data(), inIndices2View.data(),
-            outDistancesView.data(), codebookSize, outIndicesView.data());
-      } else {
-        multiSequenceLocalKernel<T, MultiIndexT>(
-            numOfBlocks, blockSize, stream, numThreadsGrid, w, inLength,
-            inDistances1View.data(), inIndices1View.data(),
-            inDistances2View.data(), inIndices2View.data(),
-            outDistancesView.data(), codebookSize, outIndicesView.data());
-      }
+      const int smem =
+          blockSize * inLength *
+          (sizeof(float) + sizeof(ushort2) + sizeof(unsigned short));
+      FAISS_ASSERT(smem <= getMaxSharedMemPerBlockCurrentDevice());
+      multiSequence_shared<T, MultiIndexT>
+          <<<numOfBlocks, blockSize, smem, stream>>>(
+              numThreadsGrid, w, inLength, inDistances1View.data(),
+              inIndices1View.data(), inDistances2View.data(),
+              inIndices2View.data(), outDistances.data(), codebookSize,
+              outIndices.data());
+    }
+  } else {
+    if (w <= inLength) {
+      multiSequenceLocalKernel<T, MultiIndexT>(
+          numOfBlocks, blockSize, stream, numThreadsGrid, w,
+          inDistances1View.data(), inIndices1View.data(),
+          inDistances2View.data(), inIndices2View.data(), outDistances.data(),
+          codebookSize, outIndices.data());
+    } else {
+      multiSequenceLocalKernel<T, MultiIndexT>(
+          numOfBlocks, blockSize, stream, numThreadsGrid, w, inLength,
+          inDistances1View.data(), inIndices1View.data(),
+          inDistances2View.data(), inIndices2View.data(), outDistances.data(),
+          codebookSize, outIndices.data());
     }
   }
 }
