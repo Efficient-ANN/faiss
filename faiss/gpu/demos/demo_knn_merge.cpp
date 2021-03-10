@@ -31,7 +31,7 @@ void merge(int k, float *firstDistances, int *firstLabels,
   }
 }
 
-void mergeKnn(int k, int kMax, int numVecs, int begin, int end,
+void mergeKnn(int k, int numVecs, int begin, int end,
               std::string inputFilePrefixDistances,
               std::string inputFilePrefixLabels,
               std::string outputFilePrefixDistances,
@@ -52,10 +52,10 @@ void mergeKnn(int k, int kMax, int numVecs, int begin, int end,
 
   firstDistances =
       faiss::fvecs_read(inFileNameDistances.c_str(), numVecs, 0, &kRead);
-  assert(kMax == kRead);
+  assert(k == kRead);
 
   firstLabels = faiss::ivecs_read(inFileNameLabels.c_str(), numVecs, 0, &kRead);
-  assert(kMax == kRead);
+  assert(k == kRead);
 
   outFileName =
       outputFilePrefixDistances + std::to_string(batchSizeM) + "M.fvecs";
@@ -114,30 +114,29 @@ void mergeKnn(int k, int kMax, int numVecs, int begin, int end,
 
 int main(int argc, char **argv) {
 
-  if (argc <= 10) {
-    std::cout << "There must be 10 or more parameters" << std::endl;
+  if (argc <= 9) {
+    std::cout << "There must be 9 or more parameters" << std::endl;
     return 1;
   }
 
-  int k, kMax, numVecs, begin, end, numThreads, batchSizeM;
+  int k, numVecs, begin, end, numThreads, batchSizeM;
   std::string inputFilePrefixDistances, inputFilePrefixLabels,
       outputFilePrefixDistances, outputFilePrefixLabels;
 
   k = std::stoi(argv[1]);
-  kMax = std::stoi(argv[2]);
-  numVecs = std::stoi(argv[3]);
-  begin = std::stoi(argv[4]);
-  end = std::stoi(argv[5]);
-  inputFilePrefixDistances = argv[6];
-  inputFilePrefixLabels = argv[7];
-  outputFilePrefixDistances = argv[8];
-  outputFilePrefixLabels = argv[9];
-  batchSizeM = std::stoi(argv[10]);
-  numThreads = argc > 11 ? std::stoi(argv[11]) : 1;
+  numVecs = std::stoi(argv[2]);
+  begin = std::stoi(argv[3]);
+  end = std::stoi(argv[4]);
+  inputFilePrefixDistances = argv[5];
+  inputFilePrefixLabels = argv[6];
+  outputFilePrefixDistances = argv[7];
+  outputFilePrefixLabels = argv[8];
+  batchSizeM = std::stoi(argv[9]);
+  numThreads = argc > 11 ? std::stoi(argv[10]) : 1;
 
   omp_set_num_threads(numThreads);
 
-  mergeKnn(k, kMax, numVecs, begin, end, inputFilePrefixDistances,
+  mergeKnn(k, numVecs, begin, end, inputFilePrefixDistances,
            inputFilePrefixLabels, outputFilePrefixDistances,
            outputFilePrefixLabels, batchSizeM);
 

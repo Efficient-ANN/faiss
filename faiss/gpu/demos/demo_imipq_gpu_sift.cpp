@@ -81,12 +81,15 @@ size_t calcImiStructureMemSize(size_t d, size_t coarseCodebookSize,
                                size_t numSubQuantizers,
                                size_t nbitsSubQuantizer) {
   size_t subCodebookSize = 1 << nbitsSubQuantizer;
-  size_t coarseQuantizerMemSize = d * coarseCodebookSize * sizeof(float);
-  size_t normMemSize = 2 * coarseCodebookSize * sizeof(float);
-  size_t productQuantizerMemSize =
-      d * subCodebookSize * numSubQuantizers * sizeof(float);
-  size_t precomputedMemSize =
-      coarseCodebookSize * subCodebookSize * numSubQuantizers * sizeof(float);
+  size_t coarseQuantizerMemSize = faiss::gpu::utils::roundUp(
+      d * coarseCodebookSize * sizeof(float), (size_t)256);
+  size_t normMemSize = faiss::gpu::utils::roundUp(
+      2 * coarseCodebookSize * sizeof(float), (size_t)256);
+  size_t productQuantizerMemSize = faiss::gpu::utils::roundUp(
+      d * subCodebookSize * numSubQuantizers * sizeof(float), (size_t)256);
+  size_t precomputedMemSize = faiss::gpu::utils::roundUp(
+      coarseCodebookSize * subCodebookSize * numSubQuantizers * sizeof(float),
+      (size_t)256);
   size_t codesPointersMemSize =
       coarseCodebookSize * coarseCodebookSize * sizeof(void *);
   size_t idsPointersMemSize =
@@ -131,10 +134,10 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
   std::cout << "imiStructureMemSize: " << imiStructureMemSize << std::endl;
 
   faiss::gpu::StandardGpuResources res(fixedMemSize);
-  constexpr size_t safeMargin = 16 * 1024 * 1024; // 16MB
+  constexpr size_t safeMargin = 300 * 1024 * 1024; // 300MB
   size_t tempMemory =
       devFree - faiss::gpu::utils::roundUp(fixedMemSize + 256, (size_t)256) -
-      faiss::gpu::utils::roundUp(imiStructureMemSize, (size_t)256) - safeMargin;
+      imiStructureMemSize - safeMargin;
   // res.noTempMemory();
   res.setTempMemory(tempMemory);
   std::cout << "tempMemory: " << tempMemory << std::endl;

@@ -15,6 +15,9 @@ target_link_libraries(demo_imipq_gpu_sift PRIVATE faiss CUDA::cudart)
 add_executable(demo_ivfpq_gpu_sift EXCLUDE_FROM_ALL demo_ivfpq_gpu_sift.cpp)
 target_link_libraries(demo_ivfpq_gpu_sift PRIVATE faiss CUDA::cudart)
 
+add_executable(demo_knn_comp EXCLUDE_FROM_ALL demo_knn_comp.cpp)
+target_link_libraries(demo_knn_comp PRIVATE faiss CUDA::cudart)
+
 add_executable(demo_knn_merge EXCLUDE_FROM_ALL demo_knn_merge.cpp)
 target_link_libraries(demo_knn_merge PRIVATE faiss CUDA::cudart)
 
