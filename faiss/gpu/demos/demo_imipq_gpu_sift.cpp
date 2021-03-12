@@ -39,15 +39,20 @@ void search(faiss::gpu::StandardGpuResources *res, faiss::Index *index,
     std::vector<float> outDistances(numQueries * k);
     std::vector<faiss::Index::idx_t> outLabels(numQueries * k);
 
-    tStart = clock();
-    index->search(numQueries, queries, k, outDistances.data(),
-                  outLabels.data());
-    faiss::gpu::CudaEvent copyEnd(
-        res->getResources()->getDefaultStreamCurrentDevice());
-    copyEnd.cpuWaitOnEvent();
-    tEnd = clock();
-    tGpu = (double)(tEnd - tStart) / CLOCKS_PER_SEC;
-    std::cout << "IMIPQ search time on GPU: " << tGpu << std::endl;
+    tGpu = 0;
+    constexpr int nRuns = 5;
+    for (int j = 0; j < nRuns; j++) {
+      tStart = clock();
+      index->search(numQueries, queries, k, outDistances.data(),
+                    outLabels.data());
+      faiss::gpu::CudaEvent copyEnd(
+          res->getResources()->getDefaultStreamCurrentDevice());
+      copyEnd.cpuWaitOnEvent();
+      tEnd = clock();
+      tGpu += (double)(tEnd - tStart) / CLOCKS_PER_SEC;
+    }
+
+    std::cout << "IMIPQ search time on GPU: " << tGpu / nRuns << std::endl;
 
     int n_1 = 0, n_10 = 0, n_100 = 0, n_1000 = 0;
     for (int a = 0; a < numQueries; a++) {
@@ -79,23 +84,27 @@ void search(faiss::gpu::StandardGpuResources *res, faiss::Index *index,
 
 size_t calcImiStructureMemSize(size_t d, size_t coarseCodebookSize,
                                size_t numSubQuantizers,
-                               size_t nbitsSubQuantizer) {
+                               size_t nbitsSubQuantizer, int maxPageSize) {
   size_t subCodebookSize = 1 << nbitsSubQuantizer;
   size_t coarseQuantizerMemSize = faiss::gpu::utils::roundUp(
-      d * coarseCodebookSize * sizeof(float), (size_t)256);
+      d * coarseCodebookSize * sizeof(float), (size_t)maxPageSize);
   size_t normMemSize = faiss::gpu::utils::roundUp(
-      2 * coarseCodebookSize * sizeof(float), (size_t)256);
-  size_t productQuantizerMemSize = faiss::gpu::utils::roundUp(
-      d * subCodebookSize * numSubQuantizers * sizeof(float), (size_t)256);
+      2 * coarseCodebookSize * sizeof(float), (size_t)maxPageSize);
+  size_t productQuantizerMemSize =
+      2 * faiss::gpu::utils::roundUp(d * subCodebookSize * sizeof(float),
+                                     (size_t)maxPageSize);
   size_t precomputedMemSize = faiss::gpu::utils::roundUp(
       coarseCodebookSize * subCodebookSize * numSubQuantizers * sizeof(float),
-      (size_t)256);
-  size_t codesPointersMemSize =
-      coarseCodebookSize * coarseCodebookSize * sizeof(void *);
-  size_t idsPointersMemSize =
-      coarseCodebookSize * coarseCodebookSize * sizeof(void *);
-  size_t listsLengthsMemSize =
-      coarseCodebookSize * coarseCodebookSize * sizeof(int);
+      (size_t)maxPageSize);
+  size_t codesPointersMemSize = faiss::gpu::utils::roundUp(
+      coarseCodebookSize * coarseCodebookSize * sizeof(void *),
+      (size_t)maxPageSize);
+  size_t idsPointersMemSize = faiss::gpu::utils::roundUp(
+      coarseCodebookSize * coarseCodebookSize * sizeof(void *),
+      (size_t)maxPageSize);
+  size_t listsLengthsMemSize = faiss::gpu::utils::roundUp(
+      coarseCodebookSize * coarseCodebookSize * sizeof(int),
+      (size_t)maxPageSize);
   return subCodebookSize + coarseQuantizerMemSize + normMemSize +
          productQuantizerMemSize + precomputedMemSize + codesPointersMemSize +
          idsPointersMemSize + listsLengthsMemSize;
@@ -112,6 +121,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
                 std::string fileNameCoarseQuantizer) {
   size_t devFree = 0;
   size_t devTotal = 0;
+  constexpr int maxPageSize = 2 * 1024 * 1024; // 2MB
 
   CUDA_VERIFY(cudaMemGetInfo(&devFree, &devTotal));
   std::cout << "-------Memory-------" << std::endl;
@@ -130,17 +140,17 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
   std::cout << "fixedMemSize: " << fixedMemSize << std::endl;
 
   size_t imiStructureMemSize = calcImiStructureMemSize(
-      d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer);
+      d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer, maxPageSize);
   std::cout << "imiStructureMemSize: " << imiStructureMemSize << std::endl;
 
   faiss::gpu::StandardGpuResources res(fixedMemSize);
-  constexpr size_t safeMargin = 300 * 1024 * 1024; // 300MB
   size_t tempMemory =
-      devFree - faiss::gpu::utils::roundUp(fixedMemSize + 256, (size_t)256) -
-      imiStructureMemSize - safeMargin;
-  // res.noTempMemory();
+      devFree -
+      faiss::gpu::utils::roundUp(fixedMemSize + 256, (size_t)maxPageSize) -
+      imiStructureMemSize;
   res.setTempMemory(tempMemory);
   std::cout << "tempMemory: " << tempMemory << std::endl;
+  // res.noTempMemory();
 
   faiss::gpu::GpuIndexIMIPQConfig config;
   config.memorySpace = faiss::gpu::MemorySpace::Fixed;
@@ -261,6 +271,8 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
       delete indexingVecs;
     }
   }
+
+  std::cout << "maxListLength: " << imipqGpu.getMaxListLength() << std::endl;
 
   std::vector<int> numQueriesList = {1, 1000, 8192, 10000};
   std::vector<int> nprobeList = {1,  2,   4,   8,   16,   32,

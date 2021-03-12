@@ -88,6 +88,8 @@ public:
   /// Are pre-computed codes enabled?
   bool getPrecomputedCodes() const;
 
+  int getMaxListLength() const;
+
   /// Return the number of sub-quantizers we are using
   int getNumSubQuantizers() const;
 

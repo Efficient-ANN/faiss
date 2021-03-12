@@ -51,6 +51,8 @@ class IVFBase {
   /// and the product quantizer info
   void reset();
 
+  int getMaxListLength() const;
+
   /// Return the number of dimensions we are indexing
   int getDim() const;
 

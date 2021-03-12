@@ -41,15 +41,20 @@ void search(faiss::gpu::StandardGpuResources *res, faiss::Index *index,
     std::vector<float> outDistances(numQueries * k);
     std::vector<faiss::Index::idx_t> outLabels(numQueries * k);
 
-    tStart = clock();
-    index->search(numQueries, queries, k, outDistances.data(),
-                  outLabels.data());
-    faiss::gpu::CudaEvent copyEnd(
-        res->getResources()->getDefaultStreamCurrentDevice());
-    copyEnd.cpuWaitOnEvent();
-    tEnd = clock();
-    tGpu = (double)(tEnd - tStart) / CLOCKS_PER_SEC;
-    std::cout << "IVFPQ search time on GPU: " << tGpu << std::endl;
+    tGpu = 0;
+    constexpr int nRuns = 5;
+    for (int j = 0; j < nRuns; j++) {
+      tStart = clock();
+      index->search(numQueries, queries, k, outDistances.data(),
+                    outLabels.data());
+      faiss::gpu::CudaEvent copyEnd(
+          res->getResources()->getDefaultStreamCurrentDevice());
+      copyEnd.cpuWaitOnEvent();
+      tEnd = clock();
+      tGpu += (double)(tEnd - tStart) / CLOCKS_PER_SEC;
+    }
+
+    std::cout << "IMIPQ search time on GPU: " << tGpu / nRuns << std::endl;
 
     int n_1 = 0, n_10 = 0, n_100 = 0, n_1000 = 0;
     for (int a = 0; a < numQueries; a++) {
@@ -81,20 +86,24 @@ void search(faiss::gpu::StandardGpuResources *res, faiss::Index *index,
 
 size_t calcIvfStructureMemSize(size_t d, size_t coarseCodebookSize,
                                size_t numSubQuantizers,
-                               size_t nbitsSubQuantizer) {
+                               size_t nbitsSubQuantizer, int maxPageSize) {
   size_t subCodebookSize = 1 << nbitsSubQuantizer;
   size_t coarseQuantizerMemSize = faiss::gpu::utils::roundUp(
-      d * coarseCodebookSize * sizeof(float), (size_t)256);
+      d * coarseCodebookSize * sizeof(float), (size_t)maxPageSize);
   size_t normMemSize = faiss::gpu::utils::roundUp(
-      coarseCodebookSize * sizeof(float), (size_t)256);
-  size_t productQuantizerMemSize = faiss::gpu::utils::roundUp(
-      d * subCodebookSize * numSubQuantizers * sizeof(float), (size_t)256);
+      coarseCodebookSize * sizeof(float), (size_t)maxPageSize);
+  size_t productQuantizerMemSize =
+      2 * faiss::gpu::utils::roundUp(d * subCodebookSize * sizeof(float),
+                                     (size_t)maxPageSize);
   size_t precomputedMemSize = faiss::gpu::utils::roundUp(
       coarseCodebookSize * subCodebookSize * numSubQuantizers * sizeof(float),
-      (size_t)256);
-  size_t codesPointersMemSize = coarseCodebookSize * sizeof(void *);
-  size_t idsPointersMemSize = coarseCodebookSize * sizeof(void *);
-  size_t listsLengthsMemSize = coarseCodebookSize * sizeof(int);
+      (size_t)maxPageSize);
+  size_t codesPointersMemSize = faiss::gpu::utils::roundUp(
+      coarseCodebookSize * sizeof(void *), (size_t)maxPageSize);
+  size_t idsPointersMemSize = faiss::gpu::utils::roundUp(
+      coarseCodebookSize * sizeof(void *), (size_t)maxPageSize);
+  size_t listsLengthsMemSize = faiss::gpu::utils::roundUp(
+      coarseCodebookSize * sizeof(int), (size_t)maxPageSize);
   return subCodebookSize + coarseQuantizerMemSize + normMemSize +
          productQuantizerMemSize + precomputedMemSize + codesPointersMemSize +
          idsPointersMemSize + listsLengthsMemSize;
@@ -113,6 +122,7 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
 
   size_t devFree = 0;
   size_t devTotal = 0;
+  constexpr int maxPageSize = 2 * 1024 * 1024; // 2MB
 
   CUDA_VERIFY(cudaMemGetInfo(&devFree, &devTotal));
   std::cout << "-------Memory-------" << std::endl;
@@ -131,17 +141,17 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
   std::cout << "fixedMemSize: " << fixedMemSize << std::endl;
 
   size_t ivfStructureMemSize = calcIvfStructureMemSize(
-      d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer);
+      d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer, maxPageSize);
   std::cout << "ivfStructureMemSize: " << ivfStructureMemSize << std::endl;
 
   faiss::gpu::StandardGpuResources res(fixedMemSize);
-  constexpr size_t safeMargin = 300 * 1024 * 1024; // 300MB
   size_t tempMemory =
-      devFree - faiss::gpu::utils::roundUp(fixedMemSize + 256, (size_t)256) -
-      ivfStructureMemSize - safeMargin;
-  // res.noTempMemory();
+      devFree -
+      faiss::gpu::utils::roundUp(fixedMemSize + 256, (size_t)maxPageSize) -
+      ivfStructureMemSize;
   res.setTempMemory(tempMemory);
   std::cout << "tempMemory: " << tempMemory << std::endl;
+  // res.noTempMemory();
 
   faiss::gpu::GpuIndexIVFPQConfig config;
   config.memorySpace = faiss::gpu::MemorySpace::Fixed;
@@ -285,6 +295,8 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
       delete cpu_index;
     }
   }
+
+  std::cout << "maxListLength: " << ivfpq->getMaxListLength() << std::endl;
 
   CUDA_VERIFY(cudaMemGetInfo(&devFree, &devTotal));
   std::cout << "-------Memory-------" << std::endl;

@@ -1145,7 +1145,8 @@ void runPQScanMultiPassPrecomputed(Tensor<float, 2, true>& queries,
   DeviceTensor<int, 3, true>* heapIndices[2] =
     {&heapIndices1, &heapIndices2};
 
-  auto streams = res->getAlternateStreamsCurrentDevice();
+  auto allStreams = res->getAlternateStreamsCurrentDevice();
+  std::vector<cudaStream_t> streams = {allStreams[0], allStreams[1]};
   streamWait(streams, {stream});
 
   int curStream = 0;
@@ -1339,7 +1340,8 @@ void runPQScanMultiPassPrecomputed(// (query id)(probe id)
   DeviceTensor<int, 3, true>* heapIndices[2] =
     {&heapIndices1, &heapIndices2};
 
-  auto streams = res->getAlternateStreamsCurrentDevice();
+  auto allStreams = res->getAlternateStreamsCurrentDevice();
+  std::vector<cudaStream_t> streams = {allStreams[0], allStreams[1]};
   streamWait(streams, {stream});
 
   int curStream = 0;

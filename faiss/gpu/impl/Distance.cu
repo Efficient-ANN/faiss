@@ -41,6 +41,7 @@ void runDistance(bool computeL2,
                  int k,
                  Tensor<float, 2, true>& outDistances,
                  Tensor<int, 2, true>& outIndices,
+                 std::vector<cudaStream_t> &streams,
                  bool ignoreOutDistances) {
   // The # of centroids in `centroids` based on memory layout
   auto numCentroids = centroids.getSize(centroidsRowMajor ? 0 : 1);
@@ -137,7 +138,6 @@ void runDistance(bool computeL2,
   DeviceTensor<int, 2, true>* outIndexBufs[2] =
     {&outIndexBuf1, &outIndexBuf2};
 
-  auto streams = res->getAlternateStreamsCurrentDevice();
   streamWait(streams, {defaultStream});
 
   int curStream = 0;
@@ -299,6 +299,7 @@ void runDistance(bool computeL2, GpuResources *res,
                  Tensor<T, 2, true> &queries, bool queriesRowMajor, int k,
                  Tensor<float, 2, true> &outDistances,
                  Tensor<unsigned short, 2, true> &outIndices,
+                 std::vector<cudaStream_t> &streams,
                  bool ignoreOutDistances) {
   // The # of centroids in `centroids` based on memory layout
   auto numCentroids = centroids.getSize(centroidsRowMajor ? 0 : 1);
@@ -391,7 +392,6 @@ void runDistance(bool computeL2, GpuResources *res,
   DeviceTensor<unsigned short, 2, true> *outIndexBufs[2] = {&outIndexBuf1,
                                                             &outIndexBuf2};
 
-  auto streams = res->getAlternateStreamsCurrentDevice();
   streamWait(streams, {defaultStream});
 
   int curStream = 0;
@@ -535,7 +535,8 @@ void runL2Distance(GpuResources* res,
                    int k,
                    Tensor<float, 2, true>& outDistances,
                    Tensor<int, 2, true>& outIndices,
-                   bool ignoreOutDistances = false) {
+                   std::vector<cudaStream_t> &streams,
+                   bool ignoreOutDistances) {
   runDistance<T>(true, // L2
                  res,
                  centroids,
@@ -546,6 +547,7 @@ void runL2Distance(GpuResources* res,
                  k,
                  outDistances,
                  outIndices,
+                 streams,
                  ignoreOutDistances);
 }
 
@@ -556,10 +558,11 @@ void runL2Distance(GpuResources *res, Tensor<T, 2, true> &centroids,
                    Tensor<T, 2, true> &queries, bool queriesRowMajor, int k,
                    Tensor<float, 2, true> &outDistances,
                    Tensor<unsigned short, 2, true> &outIndices,
-                   bool ignoreOutDistances = false) {
+                   std::vector<cudaStream_t> &streams,
+                   bool ignoreOutDistances) {
   runDistance<T>(true, // L2
                  res, centroids, centroidsRowMajor, centroidNorms, queries,
-                 queriesRowMajor, k, outDistances, outIndices,
+                 queriesRowMajor, k, outDistances, outIndices, streams,
                  ignoreOutDistances);
 }
 
@@ -572,6 +575,8 @@ void runIPDistance(GpuResources* res,
                    int k,
                    Tensor<float, 2, true>& outDistances,
                    Tensor<int, 2, true>& outIndices) {
+  auto allStreams = res->getAlternateStreamsCurrentDevice();
+  std::vector<cudaStream_t> streams = {allStreams[0], allStreams[1]};
   runDistance<T>(false, // IP
                  res,
                  centroids,
@@ -582,6 +587,7 @@ void runIPDistance(GpuResources* res,
                  k,
                  outDistances,
                  outIndices,
+                 streams,
                  false);
 }
 
@@ -637,6 +643,7 @@ runL2Distance(GpuResources* res,
               int k,
               Tensor<float, 2, true>& outDistances,
               Tensor<int, 2, true>& outIndices,
+              std::vector<cudaStream_t> streams,
               bool ignoreOutDistances) {
   runL2Distance<float>(res,
                        vectors,
@@ -646,7 +653,45 @@ runL2Distance(GpuResources* res,
                        queriesRowMajor,
                        k,
                        outDistances,
+                       outIndices, streams,
+                       ignoreOutDistances);
+}
+
+void
+runL2Distance(GpuResources* res,
+              Tensor<float, 2, true>& vectors,
+              bool vectorsRowMajor,
+              Tensor<float, 1, true>* vectorNorms,
+              Tensor<float, 2, true>& queries,
+              bool queriesRowMajor,
+              int k,
+              Tensor<float, 2, true>& outDistances,
+              Tensor<int, 2, true>& outIndices,
+              bool ignoreOutDistances) {
+  auto allStreams = res->getAlternateStreamsCurrentDevice();
+  std::vector<cudaStream_t> streams = {allStreams[0], allStreams[1]};
+  runL2Distance<float>(res,
+                       vectors,
+                       vectorsRowMajor,
+                       vectorNorms,
+                       queries,
+                       queriesRowMajor,
+                       k,
+                       outDistances,
                        outIndices,
+                       streams,
+                       ignoreOutDistances);
+}
+
+void runL2Distance(GpuResources *res, Tensor<float, 2, true> &vectors,
+                   bool vectorsRowMajor, Tensor<float, 1, true> *vectorNorms,
+                   Tensor<float, 2, true> &queries, bool queriesRowMajor, int k,
+                   Tensor<float, 2, true> &outDistances,
+                   Tensor<unsigned short, 2, true> &outIndices,
+                   std::vector<cudaStream_t> streams,
+                   bool ignoreOutDistances) {
+  runL2Distance<float>(res, vectors, vectorsRowMajor, vectorNorms, queries,
+                       queriesRowMajor, k, outDistances, outIndices, streams,
                        ignoreOutDistances);
 }
 
@@ -656,9 +701,37 @@ void runL2Distance(GpuResources *res, Tensor<float, 2, true> &vectors,
                    Tensor<float, 2, true> &outDistances,
                    Tensor<unsigned short, 2, true> &outIndices,
                    bool ignoreOutDistances) {
+  auto allStreams = res->getAlternateStreamsCurrentDevice();
+  std::vector<cudaStream_t> streams = {allStreams[0], allStreams[1]};
   runL2Distance<float>(res, vectors, vectorsRowMajor, vectorNorms, queries,
                        queriesRowMajor, k, outDistances, outIndices,
-                       ignoreOutDistances);
+                       streams, ignoreOutDistances);
+}
+
+
+void
+runL2Distance(GpuResources* res,
+              Tensor<half, 2, true>& vectors,
+              bool vectorsRowMajor,
+              Tensor<float, 1, true>* vectorNorms,
+              Tensor<half, 2, true>& queries,
+              bool queriesRowMajor,
+              int k,
+              Tensor<float, 2, true>& outDistances,
+              Tensor<int, 2, true>& outIndices,
+              std::vector<cudaStream_t> streams,
+              bool ignoreOutDistances) {
+  runL2Distance<half>(res,
+                      vectors,
+                      vectorsRowMajor,
+                      vectorNorms,
+                      queries,
+                      queriesRowMajor,
+                      k,
+                      outDistances,
+                      outIndices,
+                      streams,
+                      ignoreOutDistances);
 }
 
 void
@@ -672,6 +745,8 @@ runL2Distance(GpuResources* res,
               Tensor<float, 2, true>& outDistances,
               Tensor<int, 2, true>& outIndices,
               bool ignoreOutDistances) {
+  auto allStreams = res->getAlternateStreamsCurrentDevice();
+  std::vector<cudaStream_t> streams = {allStreams[0], allStreams[1]};
   runL2Distance<half>(res,
                       vectors,
                       vectorsRowMajor,
@@ -681,6 +756,7 @@ runL2Distance(GpuResources* res,
                       k,
                       outDistances,
                       outIndices,
+                      streams,
                       ignoreOutDistances);
 }
 
@@ -689,10 +765,26 @@ void runL2Distance(GpuResources *res, Tensor<half, 2, true> &vectors,
                    Tensor<half, 2, true> &queries, bool queriesRowMajor, int k,
                    Tensor<float, 2, true> &outDistances,
                    Tensor<unsigned short, 2, true> &outIndices,
+                   std::vector<cudaStream_t> streams,
                    bool ignoreOutDistances) {
   runL2Distance<half>(res, vectors, vectorsRowMajor, vectorNorms, queries,
                       queriesRowMajor, k, outDistances, outIndices,
+                      streams,
                       ignoreOutDistances);
+}
+
+
+void runL2Distance(GpuResources *res, Tensor<half, 2, true> &vectors,
+                   bool vectorsRowMajor, Tensor<float, 1, true> *vectorNorms,
+                   Tensor<half, 2, true> &queries, bool queriesRowMajor, int k,
+                   Tensor<float, 2, true> &outDistances,
+                   Tensor<unsigned short, 2, true> &outIndices,
+                   bool ignoreOutDistances) {
+  auto allStreams = res->getAlternateStreamsCurrentDevice();
+  std::vector<cudaStream_t> streams = {allStreams[0], allStreams[1]};
+  runL2Distance<half>(res, vectors, vectorsRowMajor, vectorNorms, queries,
+                      queriesRowMajor, k, outDistances, outIndices,
+                      streams, ignoreOutDistances);
 }
 
 } } // namespace

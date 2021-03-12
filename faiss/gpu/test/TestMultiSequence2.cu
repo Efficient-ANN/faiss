@@ -90,7 +90,8 @@ void test(int w, int numOfQueries, unsigned short numCoarseDistances) {
       faiss::gpu::makeTempAlloc(faiss::gpu::AllocType::Other, stream),
       {numOfQueries, w});
 
-  faiss::gpu::runMultiSequence2(w, inDistances, inIndices, outDistances,
+  faiss::gpu::runMultiSequence2(numOfQueries, numCoarseDistances, w,
+                                inDistances, inIndices, outDistances,
                                 outIndices, provider.getResources().get());
 
   float *dr;
@@ -189,9 +190,9 @@ void testUnifiedIndex(int w, int numOfQueries,
       faiss::gpu::makeTempAlloc(faiss::gpu::AllocType::Other, stream),
       {numOfQueries, w});
 
-  faiss::gpu::runMultiSequence2(w, inDistances, inIndices, outDistances,
-                                codebookSize, outIndices,
-                                provider.getResources().get());
+  faiss::gpu::runMultiSequence2(
+      numOfQueries, numCoarseDistances, w, inDistances, inIndices, outDistances,
+      codebookSize, outIndices, provider.getResources().get());
 
   float *dr;
   faiss::Index::idx_t *ir;

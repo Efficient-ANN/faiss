@@ -144,6 +144,8 @@ IVFBase::reset() {
   maxListLength_ = 0;
 }
 
+int IVFBase::getMaxListLength() const { return maxListLength_; }
+
 int
 IVFBase::getDim() const {
   return dim_;

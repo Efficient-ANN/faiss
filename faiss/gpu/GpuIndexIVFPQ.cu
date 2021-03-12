@@ -250,6 +250,10 @@ GpuIndexIVFPQ::getPrecomputedCodes() const {
   return usePrecomputedTables_;
 }
 
+int GpuIndexIVFPQ::getMaxListLength() const {
+  return index_->getMaxListLength();
+}
+
 int
 GpuIndexIVFPQ::getNumSubQuantizers() const {
   return subQuantizers_;

@@ -129,6 +129,10 @@ bool GpuIndexIMIPQ::getPrecomputedCodes() const {
   return usePrecomputedTables_;
 }
 
+int GpuIndexIMIPQ::getMaxListLength() const {
+  return index_->getMaxListLength();
+}
+
 int GpuIndexIMIPQ::getNumSubQuantizers() const { return subQuantizers_; }
 
 int GpuIndexIMIPQ::getBitsPerCode() const { return bitsPerCode_; }

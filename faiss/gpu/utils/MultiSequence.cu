@@ -615,24 +615,28 @@ void chooseMultiSequence2Params(const int inLength, bool &useSharedMemory,
 }
 
 template <typename T, typename TVec2>
-void runMultiSequence2T(const int &w, Tensor<float, 3, true> &inDistances,
+void runMultiSequence2T(const int numQueries, const int inLength, const int w,
+                        Tensor<float, 3, true> &inDistances,
                         Tensor<T, 3, true> &inIndices,
                         Tensor<float, 2, true> &outDistances,
-                        Tensor<TVec2, 2, true> &outIndices, GpuResources *res) {
+                        Tensor<TVec2, 2, true> &outIndices, GpuResources *res,
+                        cudaStream_t stream) {
   constexpr int NUM_CODEBOOKS = 2;
-
-  auto stream = res->getDefaultStreamCurrentDevice();
 
   FAISS_ASSERT(inDistances.getSize(0) == NUM_CODEBOOKS);
   FAISS_ASSERT(inIndices.getSize(0) == NUM_CODEBOOKS);
-  FAISS_ASSERT(inDistances.getSize(1) == inIndices.getSize(1));
-  FAISS_ASSERT(inDistances.getSize(2) == inIndices.getSize(2));
-  FAISS_ASSERT(inDistances.getSize(1) == outDistances.getSize(0));
-  FAISS_ASSERT(outDistances.getSize(0) == outIndices.getSize(0));
-  FAISS_ASSERT(outDistances.getSize(1) >= w);
-  FAISS_ASSERT(outDistances.getSize(1) == outIndices.getSize(1));
 
-  int inLength = inDistances.getSize(2);
+  FAISS_ASSERT(numQueries <= inDistances.getSize(1));
+  FAISS_ASSERT(numQueries <= inIndices.getSize(1));
+  FAISS_ASSERT(numQueries <= outDistances.getSize(0));
+  FAISS_ASSERT(numQueries <= outIndices.getSize(0));
+
+  FAISS_ASSERT(inLength <= inDistances.getSize(2));
+  FAISS_ASSERT(inLength <= inIndices.getSize(2));
+
+  FAISS_ASSERT(w <= outDistances.getSize(1));
+  FAISS_ASSERT(w <= outIndices.getSize(1));
+
   FAISS_ASSERT(inLength <= std::numeric_limits<unsigned short>::max());
   FAISS_ASSERT(w <= inLength * inLength);
   if (w <= inLength)
@@ -649,7 +653,6 @@ void runMultiSequence2T(const int &w, Tensor<float, 3, true> &inDistances,
     chooseMultiSequence2Params<T, TVec2>(inLength, useSharedMemory, blockSize);
   }
 
-  const int numQueries = inDistances.getSize(1);
   blockSize = std::min(blockSize, numQueries);
   const int numOfBlocks = (numQueries + blockSize - 1) / blockSize;
   const int numThreadsGrid =
@@ -698,25 +701,29 @@ void runMultiSequence2T(const int &w, Tensor<float, 3, true> &inDistances,
 }
 
 template <typename T, typename MultiIndexT>
-void runMultiSequence2T(const int &w, Tensor<float, 3, true> &inDistances,
+void runMultiSequence2T(const int numQueries, const int inLength, const int w,
+                        Tensor<float, 3, true> &inDistances,
                         Tensor<T, 3, true> &inIndices,
-                        Tensor<float, 2, true> &outDistances, int codebookSize,
+                        Tensor<float, 2, true> &outDistances,
+                        const int codebookSize,
                         Tensor<MultiIndexT, 2, true> &outIndices,
-                        GpuResources *res) {
+                        GpuResources *res, cudaStream_t stream) {
   constexpr int NUM_CODEBOOKS = 2;
-
-  auto stream = res->getDefaultStreamCurrentDevice();
 
   FAISS_ASSERT(inDistances.getSize(0) == NUM_CODEBOOKS);
   FAISS_ASSERT(inIndices.getSize(0) == NUM_CODEBOOKS);
-  FAISS_ASSERT(inDistances.getSize(1) == inIndices.getSize(1));
-  FAISS_ASSERT(inDistances.getSize(2) == inIndices.getSize(2));
-  FAISS_ASSERT(inDistances.getSize(1) == outDistances.getSize(0));
-  FAISS_ASSERT(outDistances.getSize(0) == outIndices.getSize(0));
-  FAISS_ASSERT(outDistances.getSize(1) >= w);
-  FAISS_ASSERT(outDistances.getSize(1) == outIndices.getSize(1));
 
-  int inLength = inDistances.getSize(2);
+  FAISS_ASSERT(numQueries <= inDistances.getSize(1));
+  FAISS_ASSERT(numQueries <= inIndices.getSize(1));
+  FAISS_ASSERT(numQueries <= outDistances.getSize(0));
+  FAISS_ASSERT(numQueries <= outIndices.getSize(0));
+
+  FAISS_ASSERT(inLength <= inDistances.getSize(2));
+  FAISS_ASSERT(inLength <= inIndices.getSize(2));
+
+  FAISS_ASSERT(w <= outDistances.getSize(1));
+  FAISS_ASSERT(w <= outIndices.getSize(1));
+
   FAISS_ASSERT(inLength <= std::numeric_limits<unsigned short>::max());
   FAISS_ASSERT(w <= inLength * inLength);
   if (w <= inLength)
@@ -734,7 +741,6 @@ void runMultiSequence2T(const int &w, Tensor<float, 3, true> &inDistances,
                                                blockSize);
   }
 
-  const int numQueries = inDistances.getSize(1);
   blockSize = std::min(blockSize, numQueries);
   const int numOfBlocks = (numQueries + blockSize - 1) / blockSize;
   const int numThreadsGrid =
@@ -785,30 +791,70 @@ void runMultiSequence2T(const int &w, Tensor<float, 3, true> &inDistances,
   }
 }
 
-void runMultiSequence2(const int w, Tensor<float, 3, true> &inDistances,
+void runMultiSequence2(const int numQueries, const int inLength, const int w,
+                       Tensor<float, 3, true> &inDistances,
+                       Tensor<ushort, 3, true> &inIndices,
+                       Tensor<float, 2, true> &outDistances,
+                       Tensor<ushort2, 2, true> &outIndices, GpuResources *res,
+                       cudaStream_t stream) {
+  runMultiSequence2T<ushort, ushort2>(numQueries, inLength, w, inDistances,
+                                      inIndices, outDistances, outIndices, res,
+                                      stream);
+}
+
+void runMultiSequence2(const int numQueries, const int inLength, const int w,
+                       Tensor<float, 3, true> &inDistances,
                        Tensor<ushort, 3, true> &inIndices,
                        Tensor<float, 2, true> &outDistances,
                        Tensor<ushort2, 2, true> &outIndices,
                        GpuResources *res) {
-  runMultiSequence2T<ushort, ushort2>(w, inDistances, inIndices, outDistances,
-                                      outIndices, res);
+  runMultiSequence2T<ushort, ushort2>(numQueries, inLength, w, inDistances,
+                                      inIndices, outDistances, outIndices, res,
+                                      res->getDefaultStreamCurrentDevice());
 }
 
-void runMultiSequence2(const int w, Tensor<float, 3, true> &inDistances,
+void runMultiSequence2(const int numQueries, const int inLength, const int w,
+                       Tensor<float, 3, true> &inDistances,
+                       Tensor<int, 3, true> &inIndices,
+                       Tensor<float, 2, true> &outDistances,
+                       Tensor<int2, 2, true> &outIndices, GpuResources *res,
+                       cudaStream_t stream) {
+  runMultiSequence2T<int, int2>(numQueries, inLength, w, inDistances, inIndices,
+                                outDistances, outIndices, res, stream);
+}
+
+void runMultiSequence2(const int numQueries, const int inLength, const int w,
+                       Tensor<float, 3, true> &inDistances,
                        Tensor<int, 3, true> &inIndices,
                        Tensor<float, 2, true> &outDistances,
                        Tensor<int2, 2, true> &outIndices, GpuResources *res) {
-  runMultiSequence2T<int, int2>(w, inDistances, inIndices, outDistances,
-                                outIndices, res);
+  runMultiSequence2T<int, int2>(numQueries, inLength, w, inDistances, inIndices,
+                                outDistances, outIndices, res,
+                                res->getDefaultStreamCurrentDevice());
 }
 
-void runMultiSequence2(const int w, Tensor<float, 3, true> &inDistances,
+void runMultiSequence2(const int numQueries, const int inLength, const int w,
+                       Tensor<float, 3, true> &inDistances,
                        Tensor<ushort, 3, true> &inIndices,
-                       Tensor<float, 2, true> &outDistances, int codebookSize,
+                       Tensor<float, 2, true> &outDistances,
+                       const int codebookSize,
+                       Tensor<Index::idx_t, 2, true> &outIndices,
+                       GpuResources *res, cudaStream_t stream) {
+  runMultiSequence2T<ushort, Index::idx_t>(
+      numQueries, inLength, w, inDistances, inIndices, outDistances,
+      codebookSize, outIndices, res, stream);
+}
+
+void runMultiSequence2(const int numQueries, const int inLength, const int w,
+                       Tensor<float, 3, true> &inDistances,
+                       Tensor<ushort, 3, true> &inIndices,
+                       Tensor<float, 2, true> &outDistances,
+                       const int codebookSize,
                        Tensor<Index::idx_t, 2, true> &outIndices,
                        GpuResources *res) {
   runMultiSequence2T<ushort, Index::idx_t>(
-      w, inDistances, inIndices, outDistances, codebookSize, outIndices, res);
+      numQueries, inLength, w, inDistances, inIndices, outDistances,
+      codebookSize, outIndices, res, res->getDefaultStreamCurrentDevice());
 }
 
 } // namespace gpu

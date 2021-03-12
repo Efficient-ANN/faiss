@@ -14,6 +14,7 @@
 #include <faiss/gpu/utils/DeviceUtils.h>
 #include <faiss/gpu/utils/MultiSequence.cuh>
 #include <faiss/gpu/utils/Transpose.cuh>
+#include <vector>
 
 namespace faiss {
 namespace gpu {
@@ -63,42 +64,101 @@ void MultiIndex2::reserve(int numVecsTotal, cudaStream_t stream) {
 
 Tensor<float, 2, true> &MultiIndex2::getVectorsFloat32Ref() { return vectors_; }
 
+template <typename IndexT>
+int calculateNumQueriesTilePerCodebook(const size_t sizeAvailable,
+                                       const int numCodebooks, const int n,
+                                       const int subK) {
+  size_t requestedSize =
+      (size_t)n * numCodebooks * subK * (sizeof(float) + sizeof(IndexT));
+
+  if (requestedSize <= sizeAvailable) {
+    return n;
+  }
+
+  const int sizePerQuery =
+      numCodebooks * subK * (sizeof(float) + sizeof(IndexT));
+  constexpr size_t minNumQueries = 512;
+  int maxNumQueriesTile = std::max(sizeAvailable / sizePerQuery, minNumQueries);
+  int minNumTiles = utils::divUp(n, maxNumQueriesTile);
+  int numQueriesTile = utils::divUp(n, minNumTiles);
+
+  // try to align with distance computation kernel
+  constexpr int numQueriesAlignment = 512;
+  int adjNumQueriesTile = utils::roundUp(numQueriesTile, numQueriesAlignment);
+
+  if (adjNumQueriesTile <= maxNumQueriesTile) {
+    return adjNumQueriesTile;
+  }
+
+  return std::min(numQueriesTile, maxNumQueriesTile);
+}
+
 template <typename IndexT, typename IndexTVec2>
 void MultiIndex2::queryImpl(Tensor<float, 2, true> &subQueries, int k,
                             Tensor<float, 2, true> &outDistances,
                             Tensor<IndexTVec2, 2, true> &outIndices,
                             bool exactDistance) {
+  if (subQueries.getSize(0) == 0 || k == 0) {
+    return;
+  }
+
   FAISS_ASSERT(subQueries.getSize(0) % numCodebooks_ == 0);
   FAISS_ASSERT(subQueries.getSize(1) == dimPerCodebook_);
-  auto stream = resources_->getDefaultStreamCurrentDevice();
 
+  size_t sizeAvailable = resources_->getTempMemoryAvailableCurrentDevice();
   int numSubQueries = subQueries.getSize(0);
   int numSubQueriesPerCodebook = numSubQueries / numCodebooks_;
   int subK = std::min(k, numCentroidsPerCodebook_);
+  int numQueriesTilePerCodebook = calculateNumQueriesTilePerCodebook<IndexT>(
+      sizeAvailable, numCodebooks_, numSubQueriesPerCodebook, subK);
+
+  auto stream = resources_->getDefaultStreamCurrentDevice();
+
   DeviceTensor<float, 3, true> outSubDistances(
       resources_, makeTempAlloc(AllocType::Other, stream),
-      {numCodebooks_, numSubQueriesPerCodebook, subK});
+      {numCodebooks_, numQueriesTilePerCodebook, subK});
+
   DeviceTensor<IndexT, 3, true> outSubIndices(
       resources_, makeTempAlloc(AllocType::Other, stream),
-      {numCodebooks_, numSubQueriesPerCodebook, subK});
+      {numCodebooks_, numQueriesTilePerCodebook, subK});
 
-  for (int i = 0; i < numCodebooks_; i++) {
-    auto subQueriesView = subQueries.narrowOutermost(
-        i * numSubQueriesPerCodebook, numSubQueriesPerCodebook);
-    auto vectorsView = vectors_.narrowOutermost(i * numCentroidsPerCodebook_,
-                                                numCentroidsPerCodebook_);
-    auto normsView = norms_.narrowOutermost(i * numCentroidsPerCodebook_,
-                                            numCentroidsPerCodebook_);
-    auto outSubDistancesView = outSubDistances[i].view();
-    auto outSubIndicesView = outSubIndices[i].view();
-    runL2Distance(resources_, vectorsView,
-                  true, // vectors is row major
-                  &normsView, subQueriesView,
-                  true, // input is row major
-                  subK, outSubDistancesView, outSubIndicesView, !exactDistance);
+  auto allStreams = resources_->getAlternateStreamsCurrentDevice();
+  // 2 streams for the first codebook and 2 streams for the second codebook
+  std::vector<cudaStream_t> streams = {allStreams[0], allStreams[1],
+                                       allStreams[2], allStreams[3]};
+
+  for (int currentTile = 0; currentTile < numSubQueriesPerCodebook;
+       currentTile += numQueriesTilePerCodebook) {
+    int currentTileSize = std::min(numQueriesTilePerCodebook,
+                                   numSubQueriesPerCodebook - currentTile);
+
+    for (int i = 0; i < numCodebooks_; i++) {
+      auto subQueriesView = subQueries.narrowOutermost(
+          i * numSubQueriesPerCodebook + currentTile, currentTileSize);
+      auto vectorsView = vectors_.narrowOutermost(i * numCentroidsPerCodebook_,
+                                                  numCentroidsPerCodebook_);
+      auto normsView = norms_.narrowOutermost(i * numCentroidsPerCodebook_,
+                                              numCentroidsPerCodebook_);
+      auto outSubDistancesView = outSubDistances[i].view();
+      auto outSubIndicesView = outSubIndices[i].view();
+
+      runL2Distance(resources_, vectorsView,
+                    true, // vectors is row major
+                    &normsView, subQueriesView,
+                    true, // input is row major
+                    subK, outSubDistancesView, outSubIndicesView,
+                    {streams[0], streams[1]}, !exactDistance);
+    }
+
+    auto outDistancesView =
+        outDistances.narrowOutermost(currentTile, currentTileSize);
+    auto outIndicesView =
+        outIndices.narrowOutermost(currentTile, currentTileSize);
+
+    // use the first stream from current tile to compute multi-sequence
+    runMultiSequence2(currentTileSize, subK, k, outSubDistances, outSubIndices,
+                      outDistancesView, outIndicesView, resources_);
   }
-  runMultiSequence2(k, outSubDistances, outSubIndices, outDistances, outIndices,
-                    resources_);
 }
 
 template <typename IndexT>
@@ -106,37 +166,68 @@ void MultiIndex2::queryImpl(Tensor<float, 2, true> &subQueries, int k,
                             Tensor<float, 2, true> &outDistances,
                             Tensor<Index::idx_t, 2, true> &outIndices,
                             bool exactDistance) {
+  if (subQueries.getSize(0) == 0 || k == 0) {
+    return;
+  }
+
   FAISS_ASSERT(subQueries.getSize(0) % numCodebooks_ == 0);
   FAISS_ASSERT(subQueries.getSize(1) == dimPerCodebook_);
-  auto stream = resources_->getDefaultStreamCurrentDevice();
 
+  size_t sizeAvailable = resources_->getTempMemoryAvailableCurrentDevice();
   int numSubQueries = subQueries.getSize(0);
   int numSubQueriesPerCodebook = numSubQueries / numCodebooks_;
   int subK = std::min(k, numCentroidsPerCodebook_);
+  int numQueriesTilePerCodebook = calculateNumQueriesTilePerCodebook<IndexT>(
+      sizeAvailable, numCodebooks_, numSubQueriesPerCodebook, subK);
+
+  auto stream = resources_->getDefaultStreamCurrentDevice();
+
   DeviceTensor<float, 3, true> outSubDistances(
       resources_, makeTempAlloc(AllocType::Other, stream),
-      {numCodebooks_, numSubQueriesPerCodebook, subK});
+      {numCodebooks_, numQueriesTilePerCodebook, subK});
+
   DeviceTensor<IndexT, 3, true> outSubIndices(
       resources_, makeTempAlloc(AllocType::Other, stream),
-      {numCodebooks_, numSubQueriesPerCodebook, subK});
+      {numCodebooks_, numQueriesTilePerCodebook, subK});
 
-  for (int i = 0; i < numCodebooks_; i++) {
-    auto subQueriesView = subQueries.narrowOutermost(
-        i * numSubQueriesPerCodebook, numSubQueriesPerCodebook);
-    auto vectorsView = vectors_.narrowOutermost(i * numCentroidsPerCodebook_,
-                                                numCentroidsPerCodebook_);
-    auto normsView = norms_.narrowOutermost(i * numCentroidsPerCodebook_,
-                                            numCentroidsPerCodebook_);
-    auto outSubDistancesView = outSubDistances[i].view();
-    auto outSubIndicesView = outSubIndices[i].view();
-    runL2Distance(resources_, vectorsView,
-                  true, // vectors is row major
-                  &normsView, subQueriesView,
-                  true, // input is row major
-                  subK, outSubDistancesView, outSubIndicesView, !exactDistance);
+  auto allStreams = resources_->getAlternateStreamsCurrentDevice();
+  // 2 streams for the first codebook and 2 streams for the second codebook
+  std::vector<cudaStream_t> streams = {allStreams[0], allStreams[1],
+                                       allStreams[2], allStreams[3]};
+
+  for (int currentTile = 0; currentTile < numSubQueriesPerCodebook;
+       currentTile += numQueriesTilePerCodebook) {
+    int currentTileSize = std::min(numQueriesTilePerCodebook,
+                                   numSubQueriesPerCodebook - currentTile);
+
+    for (int i = 0; i < numCodebooks_; i++) {
+      auto subQueriesView = subQueries.narrowOutermost(
+          i * numSubQueriesPerCodebook + currentTile, currentTileSize);
+      auto vectorsView = vectors_.narrowOutermost(i * numCentroidsPerCodebook_,
+                                                  numCentroidsPerCodebook_);
+      auto normsView = norms_.narrowOutermost(i * numCentroidsPerCodebook_,
+                                              numCentroidsPerCodebook_);
+      auto outSubDistancesView = outSubDistances[i].view();
+      auto outSubIndicesView = outSubIndices[i].view();
+
+      runL2Distance(resources_, vectorsView,
+                    true, // vectors is row major
+                    &normsView, subQueriesView,
+                    true, // input is row major
+                    subK, outSubDistancesView, outSubIndicesView,
+                    {streams[0], streams[1]}, !exactDistance);
+    }
+
+    auto outDistancesView =
+        outDistances.narrowOutermost(currentTile, currentTileSize);
+    auto outIndicesView =
+        outIndices.narrowOutermost(currentTile, currentTileSize);
+
+    // use the first stream from current tile to compute multi-sequence
+    runMultiSequence2(currentTileSize, subK, k, outSubDistances, outSubIndices,
+                      outDistancesView, numCentroidsPerCodebook_,
+                      outIndicesView, resources_);
   }
-  runMultiSequence2(k, outSubDistances, outSubIndices, outDistances,
-                    numCentroidsPerCodebook_, outIndices, resources_);
 }
 
 void MultiIndex2::query(Tensor<float, 2, true> &subQueries, int k,

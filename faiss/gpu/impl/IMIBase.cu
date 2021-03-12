@@ -125,6 +125,8 @@ void IMIBase::reset() {
   maxListLength_ = 0;
 }
 
+int IMIBase::getMaxListLength() const { return maxListLength_; }
+
 int IMIBase::getDim() const { return dim_; }
 
 size_t IMIBase::reclaimMemory() {
