@@ -54,13 +54,10 @@ runUpdateListPointers(Tensor<int, 1, true> listIds,
   int i = blockIdx.x * blockDim.x + threadIdx.x;
 
   if (i < listIds.getSize(0)) {
-    int listId = listIds[i];
-    auto listLengthsData = listLengths[listId].data(); 
-    auto listCodesData = listCodes[listId].data(); 
-    auto listIndicesData = listIndices[listId].data(); 
-    listLengthsData[0] = newListLength[i];
-    listCodesData[0] = newCodePointers[i];
-    listIndicesData[0] = newIndexPointers[i];
+    int listId = listIds[i]; 
+    listLengths.data()[listId] = newListLength[i];
+    listCodes.data()[listId] = newCodePointers[i];
+    listIndices.data()[listId] = newIndexPointers[i];
   }
 }
 
