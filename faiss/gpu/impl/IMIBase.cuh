@@ -57,10 +57,10 @@ public:
 
   /// For debugging purposes, return the list length of a particular
   /// list
-  int getListLength(int listId) const;
+  int getListLength(int listId);
 
   /// For debugging purposes, return the length of all lists
-  int getAllListsLength() const;
+  int getAllListsLength();
 
   /// Return the list indices of a particular list back to the CPU
   std::vector<long> getListIndices(int listId) const;

@@ -312,6 +312,7 @@ std::vector<Index::idx_t> GpuIndexIMIPQ::getListIndices(int listId) const {
 }
 
 std::vector<float> GpuIndexIMIPQ::getPQCentroids() const {
+  DeviceScope scope(config_.device);
   auto subCentroidsDevice = index_->getPQCentroids();
   std::vector<float> subCentroids(subCentroidsDevice.numElements());
   fromDevice<float, 3>(subCentroidsDevice, subCentroids.data(),
@@ -320,6 +321,7 @@ std::vector<float> GpuIndexIMIPQ::getPQCentroids() const {
 }
 
 std::vector<float> GpuIndexIMIPQ::getPrecomputedCodesVec() const {
+  DeviceScope scope(config_.device);
   auto precomputedCodesDevice = index_->getPrecomputedCodesVecFloat32();
   std::vector<float> precomputedCodes(precomputedCodesDevice.numElements());
   fromDevice<float, 3>(precomputedCodesDevice, precomputedCodes.data(),
@@ -328,6 +330,7 @@ std::vector<float> GpuIndexIMIPQ::getPrecomputedCodesVec() const {
 }
 
 std::vector<float> GpuIndexIMIPQ::calcTerm3(int n, const float *x) {
+  DeviceScope scope(config_.device);
   auto stream = resources_->getDefaultStream(config_.device);
 
   float *subQueries = new float[n * this->d];

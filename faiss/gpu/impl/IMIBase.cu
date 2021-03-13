@@ -305,21 +305,24 @@ void IMIBase::updateDeviceListInfo_(const std::vector<int> &listIds,
 
 size_t IMIBase::getNumLists() const { return numLists_; }
 
-int IMIBase::getListLength(int listId) const {
+int IMIBase::getListLength(int listId) {
   FAISS_THROW_IF_NOT_FMT(listId < numLists_,
                          "IVF list %d is out of bounds (%d lists total)",
                          listId, numLists_);
   FAISS_ASSERT(listId < deviceListLengths_.size());
   FAISS_ASSERT(listId < deviceListData_.size());
 
+  auto stream = resources_->getDefaultStreamCurrentDevice();
+  int hostSize;
+  fromDevice<int>(deviceListLengths_.data() + listId, &hostSize, 1, stream);
   // LHS is the GPU resident value, RHS is the CPU resident value
-  FAISS_ASSERT(deviceListLengths_.data()[listId] ==
+  FAISS_ASSERT(hostSize ==
                deviceListData_[listId]->numVecs);
 
   return deviceListData_[listId]->numVecs;
 }
 
-int IMIBase::getAllListsLength() const {
+int IMIBase::getAllListsLength() {
   int length = 0;
   for (int i = 0; i < deviceListLengths_.size(); i++) {
     length += getListLength(i);
