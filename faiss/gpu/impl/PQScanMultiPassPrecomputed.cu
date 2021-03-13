@@ -120,8 +120,8 @@ pqScanPrecomputedInterleaved(// (query id)(probe id)
                              Tensor<CodeDistanceT, 4, true> precompTerm3,
                              int coarseCodebookSize,
                              Tensor<ushort2, 2, true> topQueryToCentroid,
-                             void** listCodes,
-                             int* listLengths,
+                             Tensor<EncodeT *, 1, true> listCodes,
+                             Tensor<int, 1, true> listLengths,
                              Tensor<int, 2, true> prefixSumOffsets,
                              Tensor<float, 1, true> distance) {
   // Each block handles a single query versus single list
@@ -152,7 +152,7 @@ pqScanPrecomputedInterleaved(// (query id)(probe id)
   int outBase = *(prefixSumOffsets[queryId][probeId].data() - 1);
   float* distanceOut = distance[outBase].data();
 
-  auto vecsBase = (EncodeT*) listCodes[listId];
+  auto vecsBase = listCodes[listId];
   int numVecs = listLengths[listId];
 
   // How many vector blocks of 32 are in this list?
@@ -416,8 +416,8 @@ pqScanPrecomputedMultiPass(Tensor<float, 2, true> precompTerm1,
                            Tensor<LookupT, 4, true> precompTerm3,
                            int coarseCodebookSize,
                            Tensor<ushort2, 2, true> topQueryToCentroid,
-                           void** listCodes,
-                           int* listLengths,
+                           Tensor<uint8_t *, 1, true> listCodes,
+                           Tensor<int, 1, true> listLengths,
                            Tensor<int, 2, true> prefixSumOffsets,
                            Tensor<float, 1, true> distance) {
   // precomputed term 2 + 3 storage
@@ -766,6 +766,7 @@ runMultiPassTile(GpuResources* res,
   CUDA_TEST_ERROR();
 }
 
+template <typename IndexT>
 void
 runMultiPassTile(GpuResources* res,
                  Tensor<float, 2, true>& precompTerm1,
@@ -778,10 +779,10 @@ runMultiPassTile(GpuResources* res,
                  int bitsPerSubQuantizer,
                  int numSubQuantizers,
                  int numSubQuantizerCodes,
-                 thrust::device_vector<void*>& listCodes,
-                 thrust::device_vector<void*>& listIndices,
+                 Tensor<uint8_t *, 1, true> &listCodes,
+                 Tensor<IndexT *, 1, true> &listIndices,
                  IndicesOptions indicesOptions,
-                 thrust::device_vector<int>& listLengths,
+                 Tensor<int, 1, true> &listLengths,
                  Tensor<char, 1, true>& thrustMem,
                  Tensor<int, 2, true>& prefixSumOffsets,
                  Tensor<float, 1, true>& allDistances,
@@ -815,8 +816,8 @@ runMultiPassTile(GpuResources* res,
           precompTerm3T,                                                \
           coarseCodebookSize,                                           \
           topQueryToCentroid,                                           \
-          listCodes.data().get(),                                       \
-          listLengths.data().get(),                                     \
+          listCodes,                                                    \
+          listLengths,                                                  \
           prefixSumOffsets,                                             \
           allDistances);                                                \
     } while (0)
@@ -907,8 +908,8 @@ runMultiPassTile(GpuResources* res,
           precompTerm3T,                                                \
           coarseCodebookSize,                                           \
           topQueryToCentroid,                                           \
-          listCodes.data().get(),                                       \
-          listLengths.data().get(),                                     \
+          listCodes,                                                    \
+          listLengths,                                                  \
           prefixSumOffsets,                                             \
           allDistances);                                                \
     } while (0)
@@ -1208,6 +1209,7 @@ void runPQScanMultiPassPrecomputed(Tensor<float, 2, true>& queries,
   streamWait({stream}, streams);
 }
 
+template <typename IndexT>
 void runPQScanMultiPassPrecomputed(// (query id)(probe id)
                                    Tensor<float, 2, true>& precompTerm1,
                                    // (query id)(codebook c)(sub q)(code id)
@@ -1221,10 +1223,10 @@ void runPQScanMultiPassPrecomputed(// (query id)(probe id)
                                    int bitsPerSubQuantizer,
                                    int numSubQuantizers,
                                    int numSubQuantizerCodes,
-                                   thrust::device_vector<void*>& listCodes,
-                                   thrust::device_vector<void*>& listIndices,
+                                   Tensor<uint8_t *, 1, true> &listCodes,
+                                   Tensor<IndexT *, 1, true>& listIndices,
                                    IndicesOptions indicesOptions,
-                                   thrust::device_vector<int>& listLengths,
+                                   Tensor<int, 1, true> &listLengths,
                                    int maxListLength,
                                    int k,
                                    // output
@@ -1370,7 +1372,7 @@ void runPQScanMultiPassPrecomputed(// (query id)(probe id)
     auto outIndicesView =
       outIndices.narrowOutermost(query, numQueriesInTile);
 
-    runMultiPassTile(res,
+    runMultiPassTile<IndexT>(res,
                      term1View,
                      precompTerm2,
                      term3View,
@@ -1400,5 +1402,52 @@ void runPQScanMultiPassPrecomputed(// (query id)(probe id)
 
   streamWait({stream}, streams);
 }
+
+void runPQScanMultiPassPrecomputed( // (query id)(probe id)
+    Tensor<float, 2, true> &precompTerm1,
+    // (query id)(codebook c)(sub q)(code id)
+    NoTypeTensor<4, true> &precompTerm2,
+    // (query id)(codebook c)(sub q)(code id)
+    NoTypeTensor<4, true> &precompTerm3, int coarseCodebookSize,
+    Tensor<ushort2, 2, true> &topQueryToCentroid, bool useFloat16Lookup,
+    bool interleavedCodeLayout, int bitsPerSubQuantizer, int numSubQuantizers,
+    int numSubQuantizerCodes, Tensor<uint8_t *, 1, true> &listCodes,
+    Tensor<int *, 1, true> &listIndices, IndicesOptions indicesOptions,
+    Tensor<int, 1, true> &listLengths, int maxListLength, int k,
+    // output
+    Tensor<float, 2, true> &outDistances,
+    // output
+    Tensor<Index::idx_t, 2, true> &outIndices, GpuResources *res) {
+  runPQScanMultiPassPrecomputed<int>(
+      precompTerm1, precompTerm2, precompTerm3, coarseCodebookSize,
+      topQueryToCentroid, useFloat16Lookup, interleavedCodeLayout,
+      bitsPerSubQuantizer, numSubQuantizers, numSubQuantizerCodes, listCodes,
+      listIndices, indicesOptions, listLengths, maxListLength, k, outDistances,
+      outIndices, res);
+}
+
+void runPQScanMultiPassPrecomputed( // (query id)(probe id)
+    Tensor<float, 2, true> &precompTerm1,
+    // (query id)(codebook c)(sub q)(code id)
+    NoTypeTensor<4, true> &precompTerm2,
+    // (query id)(codebook c)(sub q)(code id)
+    NoTypeTensor<4, true> &precompTerm3, int coarseCodebookSize,
+    Tensor<ushort2, 2, true> &topQueryToCentroid, bool useFloat16Lookup,
+    bool interleavedCodeLayout, int bitsPerSubQuantizer, int numSubQuantizers,
+    int numSubQuantizerCodes, Tensor<uint8_t *, 1, true> &listCodes,
+    Tensor<Index::idx_t *, 1, true> &listIndices, IndicesOptions indicesOptions,
+    Tensor<int, 1, true> &listLengths, int maxListLength, int k,
+    // output
+    Tensor<float, 2, true> &outDistances,
+    // output
+    Tensor<Index::idx_t, 2, true> &outIndices, GpuResources *res) {
+  runPQScanMultiPassPrecomputed<Index::idx_t>(
+      precompTerm1, precompTerm2, precompTerm3, coarseCodebookSize,
+      topQueryToCentroid, useFloat16Lookup, interleavedCodeLayout,
+      bitsPerSubQuantizer, numSubQuantizers, numSubQuantizerCodes, listCodes,
+      listIndices, indicesOptions, listLengths, maxListLength, k, outDistances,
+      outIndices, res);
+}
+
 
 } } // namespace

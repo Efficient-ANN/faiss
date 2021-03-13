@@ -234,19 +234,34 @@ void IMIPQ::appendVectors_(Tensor<float, 2, true> &vecs,
   }
 
   // Append indices to the IVF lists
-  runIMIIndicesAppend(quantizer_->getCodebookSize(), listIds, listOffset,
-                      indices, indicesOptions_, deviceListIndexPointers_,
-                      stream);
+  if (indicesOptions_ == INDICES_64_BIT) {
+    DeviceTensor<Index::idx_t *, 1, true> deviceListIndexPointersTensor(
+        deviceListIndexPointersIdxT_.data(),
+        {(int)deviceListIndexPointersIdxT_.size()});
+    runIMIIndicesAppend(quantizer_->getCodebookSize(), listIds, listOffset,
+                        indices, indicesOptions_, deviceListIndexPointersTensor,
+                        stream);
+  } else {
+    DeviceTensor<int *, 1, true> deviceListIndexPointersTensor(
+        deviceListIndexPointers_.data(),
+        {(int)deviceListIndexPointers_.size()});
+    runIMIIndicesAppend(quantizer_->getCodebookSize(), listIds, listOffset,
+                        indices, indicesOptions_, deviceListIndexPointersTensor,
+                        stream);
+  }
+
+  DeviceTensor<uint8_t *, 1, true> deviceListDataPointersTensor(
+      deviceListDataPointers_.data(), {(int)deviceListDataPointers_.size()});
 
   // Append the encoded vectors to the IVF lists
   if (interleavedLayout_) {
     runIVFPQInterleavedAppend(uniqueLists, vectorsByUniqueList,
                               uniqueListVectorStart, uniqueListStartOffset,
                               bitsPerSubQuantizer_, encodings,
-                              deviceListDataPointers_, stream);
+                              deviceListDataPointersTensor, stream);
   } else {
     runIMIPQAppend(quantizer_->getCodebookSize(), listIds, listOffset,
-                   encodings, deviceListDataPointers_, stream);
+                   encodings, deviceListDataPointersTensor, stream);
   }
 }
 
@@ -608,15 +623,40 @@ void IMIPQ::runPQPrecomputedCodes_(
     term3 = NoTypeTensor<4, true>(term3TransposedView);
   }
 
-  runPQScanMultiPassPrecomputed(
-      coarseDistances, // term 1
-      term2,           // term 2
-      term3,           // term 3
-      quantizer_->getCodebookSize(), coarseIndices, useFloat16LookupTables_,
-      interleavedLayout_, bitsPerSubQuantizer_, numSubQuantizers_,
-      numSubQuantizerCodes_, deviceListDataPointers_, deviceListIndexPointers_,
-      indicesOptions_, deviceListLengths_, maxListLength_, k, outDistances,
-      outIndices, resources_);
+  DeviceTensor<uint8_t *, 1, true> deviceListDataPointersTensor(
+      deviceListDataPointers_.data(), {(int)deviceListDataPointers_.size()});
+  DeviceTensor<int, 1, true> deviceListLengthsTensor(
+      deviceListLengths_.data(), {(int)deviceListLengths_.size()});
+
+  if (indicesOptions_ == INDICES_64_BIT) {
+    DeviceTensor<Index::idx_t *, 1, true> deviceListIndexPointersTensor(
+        deviceListIndexPointersIdxT_.data(),
+        {(int)deviceListIndexPointersIdxT_.size()});
+
+    runPQScanMultiPassPrecomputed(
+        coarseDistances, // term 1
+        term2,           // term 2
+        term3,           // term 3
+        quantizer_->getCodebookSize(), coarseIndices, useFloat16LookupTables_,
+        interleavedLayout_, bitsPerSubQuantizer_, numSubQuantizers_,
+        numSubQuantizerCodes_, deviceListDataPointersTensor,
+        deviceListIndexPointersTensor, indicesOptions_, deviceListLengthsTensor,
+        maxListLength_, k, outDistances, outIndices, resources_);
+  } else {
+    DeviceTensor<int *, 1, true> deviceListIndexPointersTensor(
+        deviceListIndexPointers_.data(),
+        {(int)deviceListIndexPointers_.size()});
+
+    runPQScanMultiPassPrecomputed(
+        coarseDistances, // term 1
+        term2,           // term 2
+        term3,           // term 3
+        quantizer_->getCodebookSize(), coarseIndices, useFloat16LookupTables_,
+        interleavedLayout_, bitsPerSubQuantizer_, numSubQuantizers_,
+        numSubQuantizerCodes_, deviceListDataPointersTensor,
+        deviceListIndexPointersTensor, indicesOptions_, deviceListLengthsTensor,
+        maxListLength_, k, outDistances, outIndices, resources_);
+  }
 }
 
 template <typename CentroidT>

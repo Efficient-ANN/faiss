@@ -234,14 +234,15 @@ runPass2SelectLists(Tensor<float, 2, true>& heapDistances,
 #undef RUN_PASS
 }
 
-template <int ThreadsPerBlock,
+template <typename IndexT,
+          int ThreadsPerBlock,
           int NumWarpQ,
           int NumThreadQ,
           bool Dir>
 __global__ void
 pass2SelectLists(Tensor<float, 2, true> heapDistances,
                  Tensor<int, 2, true> heapIndices,
-                 void** listIndices,
+                 Tensor<IndexT *, 1, true> listIndices,
                  Tensor<int, 2, true> prefixSumOffsets,
                  int coarseCodebookSize,
                  Tensor<ushort2, 2, true> topQueryToCentroid,
@@ -319,10 +320,8 @@ pass2SelectLists(Tensor<float, 2, true> heapDistances,
       int listOffset = offset - listStart;
 
       // This gives us our final index
-      if (opt == INDICES_32_BIT) {
-        index = (Index::idx_t) ((int*) listIndices[listId])[listOffset];
-      } else if (opt == INDICES_64_BIT) {
-        index = ((Index::idx_t*) listIndices[listId])[listOffset];
+      if (opt == INDICES_32_BIT || opt == INDICES_64_BIT) {
+        index = listIndices[listId][listOffset];
       } else {
         index = ((Index::idx_t) listId << 32 | (Index::idx_t) listOffset);
       }
@@ -332,10 +331,11 @@ pass2SelectLists(Tensor<float, 2, true> heapDistances,
   }
 }
 
+template <typename IndexT>
 void
 runPass2SelectLists(Tensor<float, 2, true>& heapDistances,
                     Tensor<int, 2, true>& heapIndices,
-                    thrust::device_vector<void*>& listIndices,
+                    Tensor<IndexT *, 1, true> &listIndices,
                     IndicesOptions indicesOptions,
                     Tensor<int, 2, true>& prefixSumOffsets,
                     int coarseCodebookSize,
@@ -349,10 +349,10 @@ runPass2SelectLists(Tensor<float, 2, true>& heapDistances,
 
 #define RUN_PASS(BLOCK, NUM_WARP_Q, NUM_THREAD_Q, DIR)                  \
   do {                                                                  \
-    pass2SelectLists<BLOCK, NUM_WARP_Q, NUM_THREAD_Q, DIR>              \
+    pass2SelectLists<IndexT, BLOCK, NUM_WARP_Q, NUM_THREAD_Q, DIR>      \
       <<<grid, BLOCK, 0, stream>>>(heapDistances,                       \
                                    heapIndices,                         \
-                                   listIndices.data().get(),            \
+                                   listIndices,                         \
                                    prefixSumOffsets,                    \
                                    coarseCodebookSize,                  \
                                    topQueryToCentroid,                  \
@@ -422,6 +422,32 @@ runPass2SelectLists(Tensor<float, 2, true>& heapDistances,
 
 #undef RUN_PASS_DIR
 #undef RUN_PASS
+}
+
+void runPass2SelectLists(
+    Tensor<float, 2, true> &heapDistances, Tensor<int, 2, true> &heapIndices,
+    Tensor<int *, 1, true> &listIndices, IndicesOptions indicesOptions,
+    Tensor<int, 2, true> &prefixSumOffsets, int coarseCodebookSize,
+    Tensor<ushort2, 2, true> &topQueryToCentroid, int k, bool chooseLargest,
+    Tensor<float, 2, true> &outDistances,
+    Tensor<Index::idx_t, 2, true> &outIndices, cudaStream_t stream) {
+  runPass2SelectLists<int>(heapDistances, heapIndices, listIndices,
+                           indicesOptions, prefixSumOffsets, coarseCodebookSize,
+                           topQueryToCentroid, k, chooseLargest, outDistances,
+                           outIndices, stream);
+}
+
+void runPass2SelectLists(
+    Tensor<float, 2, true> &heapDistances, Tensor<int, 2, true> &heapIndices,
+    Tensor<Index::idx_t *, 1, true> &listIndices, IndicesOptions indicesOptions,
+    Tensor<int, 2, true> &prefixSumOffsets, int coarseCodebookSize,
+    Tensor<ushort2, 2, true> &topQueryToCentroid, int k, bool chooseLargest,
+    Tensor<float, 2, true> &outDistances,
+    Tensor<Index::idx_t, 2, true> &outIndices, cudaStream_t stream) {
+  runPass2SelectLists<Index::idx_t>(
+      heapDistances, heapIndices, listIndices, indicesOptions, prefixSumOffsets,
+      coarseCodebookSize, topQueryToCentroid, k, chooseLargest, outDistances,
+      outIndices, stream);
 }
 
 } } // namespace

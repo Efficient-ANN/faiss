@@ -28,7 +28,20 @@ IMIBase::IMIBase(GpuResources *resources, MultiIndex2 *quantizer,
                  MemorySpace space)
     : resources_(resources), quantizer_(quantizer), dim_(quantizer->getDim()),
       numLists_(quantizer->getSize()), interleavedLayout_(interleavedLayout),
-      indicesOptions_(indicesOptions), space_(space), maxListLength_(0) {
+      indicesOptions_(indicesOptions), space_(space),
+      deviceListDataPointers_(
+          resources, makeDevAlloc(AllocType::Other,
+                                  resources->getDefaultStreamCurrentDevice())),
+      deviceListIndexPointers_(
+          resources, makeDevAlloc(AllocType::Other,
+                                  resources->getDefaultStreamCurrentDevice())),
+      deviceListIndexPointersIdxT_(
+          resources, makeDevAlloc(AllocType::Other,
+                                  resources->getDefaultStreamCurrentDevice())),
+      deviceListLengths_(
+          resources, makeDevAlloc(AllocType::Other,
+                                  resources->getDefaultStreamCurrentDevice())),
+      maxListLength_(0) {
   reset();
 }
 
@@ -103,6 +116,7 @@ void IMIBase::reset() {
   deviceListIndices_.clear();
   deviceListDataPointers_.clear();
   deviceListIndexPointers_.clear();
+  deviceListIndexPointersIdxT_.clear();
   deviceListLengths_.clear();
   listOffsetToUserIndex_.clear();
 
@@ -119,9 +133,43 @@ void IMIBase::reset() {
     listOffsetToUserIndex_.emplace_back(std::vector<Index::idx_t>());
   }
 
-  deviceListDataPointers_.resize(numLists_, nullptr);
-  deviceListIndexPointers_.resize(numLists_, nullptr);
-  deviceListLengths_.resize(numLists_, 0);
+  auto stream = resources_->getDefaultStreamCurrentDevice();
+
+  deviceListDataPointers_.reserve(numLists_, stream);
+  deviceListDataPointers_.resize(numLists_, stream);
+  DeviceTensor<uint8_t *, 1, true> deviceListDataPointersTensor(
+      deviceListDataPointers_.data(), {(int)deviceListDataPointers_.size()});
+  thrust::fill(thrust::cuda::par.on(stream),
+               deviceListDataPointersTensor.data(),
+               deviceListDataPointersTensor.end(), nullptr);
+
+  if (indicesOptions_ == INDICES_64_BIT) {
+    deviceListIndexPointersIdxT_.reserve(numLists_, stream);
+    deviceListIndexPointersIdxT_.resize(numLists_, stream);
+    DeviceTensor<Index::idx_t *, 1, true> deviceListIndexPointersTensor(
+        deviceListIndexPointersIdxT_.data(),
+        {(int)deviceListIndexPointersIdxT_.size()});
+    thrust::fill(thrust::cuda::par.on(stream),
+                 deviceListIndexPointersTensor.data(),
+                 deviceListIndexPointersTensor.end(), nullptr);
+  } else {
+    deviceListIndexPointers_.reserve(numLists_, stream);
+    deviceListIndexPointers_.resize(numLists_, stream);
+    DeviceTensor<int *, 1, true> deviceListIndexPointersTensor(
+        deviceListIndexPointers_.data(),
+        {(int)deviceListIndexPointers_.size()});
+    thrust::fill(thrust::cuda::par.on(stream),
+                 deviceListIndexPointersTensor.data(),
+                 deviceListIndexPointersTensor.end(), nullptr);
+  }
+
+  deviceListLengths_.reserve(numLists_, stream);
+  deviceListLengths_.resize(numLists_, stream);
+  DeviceTensor<int, 1, true> deviceListLengthsTensor(
+      deviceListLengths_.data(), {(int)deviceListLengths_.size()});
+  thrust::fill(thrust::cuda::par.on(stream), deviceListLengthsTensor.data(),
+               deviceListLengthsTensor.end(), 0);
+
   maxListLength_ = 0;
 }
 
@@ -143,14 +191,23 @@ size_t IMIBase::reclaimMemory_(bool exact) {
     auto &data = deviceListData_[i]->data;
     totalReclaimed += data.reclaim(exact, stream);
 
-    deviceListDataPointers_[i] = data.data();
+    deviceListDataPointers_.data()[i] = data.data();
   }
 
-  for (int i = 0; i < deviceListIndices_.size(); ++i) {
-    auto &indices = deviceListIndices_[i]->data;
-    totalReclaimed += indices.reclaim(exact, stream);
+  if (indicesOptions_ == INDICES_64_BIT) {
+    for (int i = 0; i < deviceListIndices_.size(); ++i) {
+      auto &indices = deviceListIndices_[i]->data;
+      totalReclaimed += indices.reclaim(exact, stream);
 
-    deviceListIndexPointers_[i] = indices.data();
+      deviceListIndexPointersIdxT_.data()[i] = (Index::idx_t *)indices.data();
+    }
+  } else {
+    for (int i = 0; i < deviceListIndices_.size(); ++i) {
+      auto &indices = deviceListIndices_[i]->data;
+      totalReclaimed += indices.reclaim(exact, stream);
+
+      deviceListIndexPointers_.data()[i] = (int *)indices.data();
+    }
   }
 
   // Update device info for all lists, since the base pointers may
@@ -158,7 +215,7 @@ size_t IMIBase::reclaimMemory_(bool exact) {
   updateDeviceListInfo_(stream);
 
   return totalReclaimed;
-}
+} // namespace gpu
 
 void IMIBase::updateDeviceListInfo_(cudaStream_t stream) {
   std::vector<int> listIds(deviceListData_.size());
@@ -173,18 +230,15 @@ void IMIBase::updateDeviceListInfo_(const std::vector<int> &listIds,
                                     cudaStream_t stream) {
   HostTensor<int, 1, true> hostListsToUpdate({(int)listIds.size()});
   HostTensor<int, 1, true> hostNewListLength({(int)listIds.size()});
-  HostTensor<void *, 1, true> hostNewDataPointers({(int)listIds.size()});
-  HostTensor<void *, 1, true> hostNewIndexPointers({(int)listIds.size()});
+  HostTensor<uint8_t *, 1, true> hostNewDataPointers({(int)listIds.size()});
 
   for (int i = 0; i < listIds.size(); ++i) {
     auto listId = listIds[i];
     auto &data = deviceListData_[listId];
-    auto &indices = deviceListIndices_[listId];
 
     hostListsToUpdate[i] = listId;
     hostNewListLength[i] = data->numVecs;
     hostNewDataPointers[i] = data->data.data();
-    hostNewIndexPointers[i] = indices->data.data();
   }
 
   // Copy the above update sets to the GPU
@@ -192,18 +246,61 @@ void IMIBase::updateDeviceListInfo_(const std::vector<int> &listIds,
       resources_, makeTempAlloc(AllocType::Other, stream), hostListsToUpdate);
   DeviceTensor<int, 1, true> newListLength(
       resources_, makeTempAlloc(AllocType::Other, stream), hostNewListLength);
-  DeviceTensor<void *, 1, true> newDataPointers(
+  DeviceTensor<uint8_t *, 1, true> newDataPointers(
       resources_, makeTempAlloc(AllocType::Other, stream), hostNewDataPointers);
-  DeviceTensor<void *, 1, true> newIndexPointers(
-      resources_, makeTempAlloc(AllocType::Other, stream),
-      hostNewIndexPointers);
 
-  // Update all pointers to the lists on the device that may have
-  // changed
-  runUpdateListPointers(listsToUpdate, newListLength, newDataPointers,
-                        newIndexPointers, deviceListLengths_,
-                        deviceListDataPointers_, deviceListIndexPointers_,
-                        stream);
+  DeviceTensor<uint8_t *, 1, true> deviceListDataPointersTensor(
+      deviceListDataPointers_.data(), {(int)deviceListDataPointers_.size()});
+  DeviceTensor<int, 1, true> deviceListLengthsTensor(
+      deviceListLengths_.data(), {(int)deviceListLengths_.size()});
+
+  if (indicesOptions_ == INDICES_64_BIT) {
+    HostTensor<Index::idx_t *, 1, true> hostNewIndexPointers(
+        {(int)listIds.size()});
+
+    for (int i = 0; i < listIds.size(); ++i) {
+      auto listId = listIds[i];
+      auto &indices = deviceListIndices_[listId];
+      hostNewIndexPointers[i] = (Index::idx_t *)indices->data.data();
+    }
+
+    DeviceTensor<Index::idx_t *, 1, true> newIndexPointers(
+        resources_, makeTempAlloc(AllocType::Other, stream),
+        hostNewIndexPointers);
+
+    DeviceTensor<Index::idx_t *, 1, true> deviceListIndexPointersTensor(
+        deviceListIndexPointersIdxT_.data(),
+        {(int)deviceListIndexPointersIdxT_.size()});
+    // Update all pointers to the lists on the device that may have
+    // changed
+    runUpdateListPointers(listsToUpdate, newListLength, newDataPointers,
+                          newIndexPointers, deviceListLengthsTensor,
+                          deviceListDataPointersTensor,
+                          deviceListIndexPointersTensor, stream);
+  } else {
+    HostTensor<int *, 1, true> hostNewIndexPointers({(int)listIds.size()});
+
+    for (int i = 0; i < listIds.size(); ++i) {
+      auto listId = listIds[i];
+      auto &indices = deviceListIndices_[listId];
+      hostNewIndexPointers[i] = (int *)indices->data.data();
+    }
+
+    DeviceTensor<int *, 1, true> newIndexPointers(
+        resources_, makeTempAlloc(AllocType::Other, stream),
+        hostNewIndexPointers);
+
+    DeviceTensor<int *, 1, true> deviceListIndexPointersTensor(
+        deviceListIndexPointers_.data(),
+        {(int)deviceListIndexPointers_.size()});
+
+    // Update all pointers to the lists on the device that may have
+    // changed
+    runUpdateListPointers(listsToUpdate, newListLength, newDataPointers,
+                          newIndexPointers, deviceListLengthsTensor,
+                          deviceListDataPointersTensor,
+                          deviceListIndexPointersTensor, stream);
+  }
 }
 
 size_t IMIBase::getNumLists() const { return numLists_; }
@@ -216,7 +313,8 @@ int IMIBase::getListLength(int listId) const {
   FAISS_ASSERT(listId < deviceListData_.size());
 
   // LHS is the GPU resident value, RHS is the CPU resident value
-  FAISS_ASSERT(deviceListLengths_[listId] == deviceListData_[listId]->numVecs);
+  FAISS_ASSERT(deviceListLengths_.data()[listId] ==
+               deviceListData_[listId]->numVecs);
 
   return deviceListData_[listId]->numVecs;
 }
@@ -334,8 +432,8 @@ void IMIBase::addEncodedVectorsToList_(int listId, const void *codes,
   // Handle the indices as well
   addIndicesFromCpu_(listId, indices, numVecs);
 
-  deviceListDataPointers_[listId] = listCodes->data.data();
-  deviceListLengths_[listId] = numVecs;
+  deviceListDataPointers_.data()[listId] = listCodes->data.data();
+  deviceListLengths_.data()[listId] = numVecs;
 
   // We update this as well, since the multi-pass algorithm uses it
   maxListLength_ = std::max(maxListLength_, (int)numVecs);
@@ -384,7 +482,12 @@ void IMIBase::addIndicesFromCpu_(int listId, const Index::idx_t *indices,
     FAISS_ASSERT(indicesOptions_ == INDICES_IVF);
   }
 
-  deviceListIndexPointers_[listId] = listIndices->data.data();
+  if (indicesOptions_ == INDICES_64_BIT) {
+    deviceListIndexPointersIdxT_.data()[listId] =
+        (Index::idx_t *)listIndices->data.data();
+  } else {
+    deviceListIndexPointers_.data()[listId] = (int *)listIndices->data.data();
+  }
 }
 
 int IMIBase::addVectors(Tensor<float, 2, true> &vecs,

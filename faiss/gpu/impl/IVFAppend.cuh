@@ -33,6 +33,26 @@ void runUpdateListPointers(Tensor<int, 1, true>& listIds,
                            thrust::device_vector<void*>& listIndices,
                            cudaStream_t stream);
 
+/// Update device-side list pointers in a batch
+void runUpdateListPointers(Tensor<int, 1, true>& listIds,
+                           Tensor<int, 1, true>& newListLength,
+                           Tensor<uint8_t *, 1, true>& newCodePointers,
+                           Tensor<int *, 1, true>& newIndexPointers,
+                           Tensor<int, 1, true> &listLengths,
+                           Tensor<uint8_t *, 1, true> &listCodes,
+                           Tensor<int *, 1, true> &listIndices,
+                           cudaStream_t stream);
+
+/// Update device-side list pointers in a batch
+void runUpdateListPointers(Tensor<int, 1, true>& listIds,
+                           Tensor<int, 1, true>& newListLength,
+                           Tensor<uint8_t *, 1, true>& newCodePointers,
+                           Tensor<Index::idx_t *, 1, true>& newIndexPointers,
+                           Tensor<int, 1, true> &listLengths,
+                           Tensor<uint8_t *, 1, true> &listCodes,
+                           Tensor<Index::idx_t *, 1, true> &listIndices,
+                           cudaStream_t stream);
+
 /// Append PQ codes to IVF lists (non-interleaved format)
 void runIVFPQAppend(Tensor<int, 1, true>& listIds,
                     Tensor<int, 1, true>& listOffset,
@@ -59,7 +79,7 @@ void runIVFPQInterleavedAppend(Tensor<int, 1, true>& uniqueLists,
                                Tensor<int, 1, true>& uniqueListStartOffset,
                                int bitsPerCode,
                                Tensor<uint8_t, 2, true>& encodings,
-                               thrust::device_vector<void*>& listCodes,
+                               Tensor<uint8_t *, 1, true> &listCodes,
                                cudaStream_t stream);
 
 /// Append SQ codes to IVF lists (non-interleaved, old format)

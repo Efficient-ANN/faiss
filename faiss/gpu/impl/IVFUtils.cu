@@ -85,7 +85,7 @@ void runCalcListOffsets(GpuResources* res,
 __global__ void
 getResultLengths(int coarseCodebookSize,
                  Tensor<ushort2, 2, true> topQueryToCentroid,
-                 int* listLengths,
+                 Tensor<int, 1, true> listLengths,
                  int totalSize,
                  Tensor<int, 2, true> length) {
   int linearThreadId = blockIdx.x * blockDim.x + threadIdx.x;
@@ -112,7 +112,7 @@ getResultLengths(int coarseCodebookSize,
 void runCalcListOffsets(GpuResources* res,
                         int coarseCodebookSize,
                         Tensor<ushort2, 2, true>& topQueryToCentroid,
-                        thrust::device_vector<int>& listLengths,
+                        Tensor<int, 1, true> &listLengths,
                         Tensor<int, 2, true>& prefixSumOffsets,
                         Tensor<char, 1, true>& thrustMem,
                         cudaStream_t stream) {
@@ -130,7 +130,7 @@ void runCalcListOffsets(GpuResources* res,
   getResultLengths<<<grid, block, 0, stream>>>(
     coarseCodebookSize,
     topQueryToCentroid,
-    listLengths.data().get(),
+    listLengths,
     totalSize,
     prefixSumOffsets);
   CUDA_TEST_ERROR();

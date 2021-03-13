@@ -157,15 +157,16 @@ protected:
 
   /// Device representation of all inverted list data
   /// id -> data
-  thrust::device_vector<void *> deviceListDataPointers_;
+  DeviceVector<uint8_t *> deviceListDataPointers_;
 
   /// Device representation of all inverted list index pointers
   /// id -> data
-  thrust::device_vector<void *> deviceListIndexPointers_;
+  DeviceVector<int *> deviceListIndexPointers_;
+  DeviceVector<Index::idx_t *> deviceListIndexPointersIdxT_;
 
   /// Device representation of all inverted list lengths
   /// id -> length
-  thrust::device_vector<int> deviceListLengths_;
+  DeviceVector<int> deviceListLengths_;
 
   /// Maximum list length seen
   int maxListLength_;
