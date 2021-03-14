@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <faiss/MetricType.h>
 #include <faiss/gpu/impl/Distance.cuh>
+#include <faiss/gpu/impl/DistanceUtils.cuh>
 #include <faiss/gpu/impl/L2Norm.cuh>
 #include <faiss/gpu/impl/MultiIndex2.cuh>
 #include <faiss/gpu/impl/VectorResidual.cuh>
@@ -65,20 +66,47 @@ void MultiIndex2::reserve(int numVecsTotal, cudaStream_t stream) {
 Tensor<float, 2, true> &MultiIndex2::getVectorsFloat32Ref() { return vectors_; }
 
 template <typename IndexT>
-int calculateNumQueriesTilePerCodebook(const size_t sizeAvailable,
-                                       const int numCodebooks, const int n,
+int calculateNumQueriesTilePerCodebook(const size_t sizeAvailable, const int n,
+                                       const int d, const int numCodebooks,
+                                       const int numCentroidsPerCodebook,
                                        const int subK) {
-  size_t requestedSize =
+  constexpr size_t minNumQueries = 1;
+
+  if (n <= minNumQueries) {
+    return minNumQueries;
+  }
+
+  int distanceKernelTileRows = 0;
+  int distanceKernelTileCols = 0;
+  chooseTileSize(n, numCentroidsPerCodebook, d, sizeof(float), sizeAvailable,
+                 distanceKernelTileRows, distanceKernelTileCols);
+  int distanceKernelNumColTiles =
+      utils::divUp(numCentroidsPerCodebook, distanceKernelTileCols);
+
+  size_t distanceBufSize =
+      2 * distanceKernelTileRows * distanceKernelTileCols * sizeof(float);
+  size_t outDistanceBufSize = 2 * subK * distanceKernelTileRows *
+                              distanceKernelNumColTiles * sizeof(float);
+  size_t outIndiceBufSize = 2 * subK * distanceKernelTileRows *
+                            distanceKernelNumColTiles * sizeof(int);
+  size_t distanceKernelSize =
+      distanceBufSize + outDistanceBufSize + outIndiceBufSize;
+
+  size_t multiSequenceSize =
       (size_t)n * numCodebooks * subK * (sizeof(float) + sizeof(IndexT));
+
+  size_t requestedSize = distanceKernelSize + multiSequenceSize;
 
   if (requestedSize <= sizeAvailable) {
     return n;
   }
 
+  size_t adjustableSize = sizeAvailable - distanceKernelSize;
+
   const int sizePerQuery =
       numCodebooks * subK * (sizeof(float) + sizeof(IndexT));
-  constexpr size_t minNumQueries = 512;
-  int maxNumQueriesTile = std::max(sizeAvailable / sizePerQuery, minNumQueries);
+  int maxNumQueriesTile =
+      std::max(adjustableSize / sizePerQuery, minNumQueries);
   int minNumTiles = utils::divUp(n, maxNumQueriesTile);
   int numQueriesTile = utils::divUp(n, minNumTiles);
 
@@ -110,7 +138,8 @@ void MultiIndex2::queryImpl(Tensor<float, 2, true> &subQueries, int k,
   int numSubQueriesPerCodebook = numSubQueries / numCodebooks_;
   int subK = std::min(k, numCentroidsPerCodebook_);
   int numQueriesTilePerCodebook = calculateNumQueriesTilePerCodebook<IndexT>(
-      sizeAvailable, numCodebooks_, numSubQueriesPerCodebook, subK);
+      sizeAvailable, numSubQueriesPerCodebook, dimPerCodebook_, numCodebooks_,
+      numCentroidsPerCodebook_, subK);
 
   auto stream = resources_->getDefaultStreamCurrentDevice();
 
@@ -178,7 +207,8 @@ void MultiIndex2::queryImpl(Tensor<float, 2, true> &subQueries, int k,
   int numSubQueriesPerCodebook = numSubQueries / numCodebooks_;
   int subK = std::min(k, numCentroidsPerCodebook_);
   int numQueriesTilePerCodebook = calculateNumQueriesTilePerCodebook<IndexT>(
-      sizeAvailable, numCodebooks_, numSubQueriesPerCodebook, subK);
+      sizeAvailable, numSubQueriesPerCodebook, dimPerCodebook_, numCodebooks_,
+      numCentroidsPerCodebook_, subK);
 
   auto stream = resources_->getDefaultStreamCurrentDevice();
 

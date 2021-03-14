@@ -230,6 +230,7 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
       size_t maxAddTileSize = (size_t)8 * 1024 * 1024 * 1024;
       size_t numVecsTile = maxAddTileSize / (d * sizeof(float));
       numVecsTile = std::min(numVecsTile, numIndexingVecs);
+      numVecsTile = std::min(numVecsTile, (size_t) 10000);
       numVecsTile = std::max(numVecsTile, (size_t)1);
       tStart = clock();
       for (size_t i = 0; i < numIndexingVecs; i += numVecsTile) {
@@ -269,6 +270,7 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
       size_t maxAddTileSize = (size_t)8 * 1024 * 1024 * 1024;
       size_t numVecsTile = maxAddTileSize / (d * sizeof(float));
       numVecsTile = std::min(numVecsTile, numIndexingVecs);
+      numVecsTile = std::min(numVecsTile, (size_t) 10000);
       numVecsTile = std::max(numVecsTile, (size_t)1);
       for (size_t i = 0; i < numIndexingVecs; i += numVecsTile) {
         size_t currentNumVecsTile = std::min(numVecsTile, numIndexingVecs - i);

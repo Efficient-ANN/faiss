@@ -63,7 +63,7 @@ public:
   int getAllListsLength();
 
   /// Return the list indices of a particular list back to the CPU
-  std::vector<long> getListIndices(int listId) const;
+  std::vector<Index::idx_t> getListIndices(int listId) const;
 
   /// Return the encoded vectors of a particular list back to the CPU
   std::vector<uint8_t> getListVectorData(int listId, bool gpuFormat) const;

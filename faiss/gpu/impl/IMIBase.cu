@@ -215,7 +215,7 @@ size_t IMIBase::reclaimMemory_(bool exact) {
   updateDeviceListInfo_(stream);
 
   return totalReclaimed;
-} // namespace gpu
+}
 
 void IMIBase::updateDeviceListInfo_(cudaStream_t stream) {
   std::vector<int> listIds(deviceListData_.size());
