@@ -70,10 +70,10 @@ int calculateNumQueriesTilePerCodebook(const size_t sizeAvailable, const int n,
                                        const int d, const int numCodebooks,
                                        const int numCentroidsPerCodebook,
                                        const int subK) {
-  constexpr size_t minNumQueries = 1;
+  constexpr int minNumQueries = 128;
 
   if (n <= minNumQueries) {
-    return minNumQueries;
+    return n;
   }
 
   int distanceKernelTileRows = 0;
@@ -101,12 +101,16 @@ int calculateNumQueriesTilePerCodebook(const size_t sizeAvailable, const int n,
     return n;
   }
 
+  if (distanceKernelSize > sizeAvailable) {
+    return std::min(n, minNumQueries);
+  }
+
   size_t adjustableSize = sizeAvailable - distanceKernelSize;
 
   const int sizePerQuery =
       numCodebooks * subK * (sizeof(float) + sizeof(IndexT));
   int maxNumQueriesTile =
-      std::max(adjustableSize / sizePerQuery, minNumQueries);
+      std::max(adjustableSize / sizePerQuery, (size_t)minNumQueries);
   int minNumTiles = utils::divUp(n, maxNumQueriesTile);
   int numQueriesTile = utils::divUp(n, minNumTiles);
 
@@ -115,7 +119,7 @@ int calculateNumQueriesTilePerCodebook(const size_t sizeAvailable, const int n,
   int adjNumQueriesTile = utils::roundUp(numQueriesTile, numQueriesAlignment);
 
   if (adjNumQueriesTile <= maxNumQueriesTile) {
-    return adjNumQueriesTile;
+    return std::min(n, adjNumQueriesTile);
   }
 
   return std::min(numQueriesTile, maxNumQueriesTile);
@@ -168,8 +172,10 @@ void MultiIndex2::queryImpl(Tensor<float, 2, true> &subQueries, int k,
                                                   numCentroidsPerCodebook_);
       auto normsView = norms_.narrowOutermost(i * numCentroidsPerCodebook_,
                                               numCentroidsPerCodebook_);
-      auto outSubDistancesView = outSubDistances[i].view();
-      auto outSubIndicesView = outSubIndices[i].view();
+      auto outSubDistancesView =
+          outSubDistances[i].view().narrowOutermost(0, currentTileSize);
+      auto outSubIndicesView =
+          outSubIndices[i].view().narrowOutermost(0, currentTileSize);
 
       runL2Distance(resources_, vectorsView,
                     true, // vectors is row major
@@ -237,8 +243,10 @@ void MultiIndex2::queryImpl(Tensor<float, 2, true> &subQueries, int k,
                                                   numCentroidsPerCodebook_);
       auto normsView = norms_.narrowOutermost(i * numCentroidsPerCodebook_,
                                               numCentroidsPerCodebook_);
-      auto outSubDistancesView = outSubDistances[i].view();
-      auto outSubIndicesView = outSubIndices[i].view();
+      auto outSubDistancesView =
+          outSubDistances[i].view().narrowOutermost(0, currentTileSize);
+      auto outSubIndicesView =
+          outSubIndices[i].view().narrowOutermost(0, currentTileSize);
 
       runL2Distance(resources_, vectorsView,
                     true, // vectors is row major

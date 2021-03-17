@@ -54,7 +54,7 @@ void search(faiss::gpu::StandardGpuResources *res, faiss::Index *index,
       tGpu += (double)(tEnd - tStart) / CLOCKS_PER_SEC;
     }
 
-    std::cout << "IMIPQ search time on GPU: " << tGpu / nRuns << std::endl;
+    std::cout << "IVFPQ search time on GPU: " << tGpu / nRuns << std::endl;
 
     int n_1 = 0, n_10 = 0, n_100 = 0, n_1000 = 0;
     for (int a = 0; a < numQueries; a++) {
@@ -230,7 +230,6 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
       size_t maxAddTileSize = (size_t)8 * 1024 * 1024 * 1024;
       size_t numVecsTile = maxAddTileSize / (d * sizeof(float));
       numVecsTile = std::min(numVecsTile, numIndexingVecs);
-      numVecsTile = std::min(numVecsTile, (size_t) 10000);
       numVecsTile = std::max(numVecsTile, (size_t)1);
       tStart = clock();
       for (size_t i = 0; i < numIndexingVecs; i += numVecsTile) {
@@ -270,8 +269,8 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
       size_t maxAddTileSize = (size_t)8 * 1024 * 1024 * 1024;
       size_t numVecsTile = maxAddTileSize / (d * sizeof(float));
       numVecsTile = std::min(numVecsTile, numIndexingVecs);
-      numVecsTile = std::min(numVecsTile, (size_t) 10000);
       numVecsTile = std::max(numVecsTile, (size_t)1);
+      tStart = clock();
       for (size_t i = 0; i < numIndexingVecs; i += numVecsTile) {
         size_t currentNumVecsTile = std::min(numVecsTile, numIndexingVecs - i);
         float *indexingVecs;
@@ -283,13 +282,12 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
                                            currentNumVecsTile, i, &dRead);
         }
         assert(d == dRead);
-        tStart = clock();
         ivfpq->add(currentNumVecsTile, indexingVecs);
-        tEnd = clock();
-        tGpu = (double)(tEnd - tStart) / CLOCKS_PER_SEC;
-        std::cout << "IVFPQ add time on GPU: " << tGpu << std::endl;
         delete indexingVecs;
       }
+      tEnd = clock();
+      tGpu = (double)(tEnd - tStart) / CLOCKS_PER_SEC;
+      std::cout << "IVFPQ add time on GPU: " << tGpu << std::endl;
     }
     if (!fileNameIndex.empty()) {
       faiss::Index *cpu_index = faiss::gpu::index_gpu_to_cpu(ivfpq);

@@ -230,7 +230,6 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
       faiss::gpu::CudaEvent updateEnd(
           res.getResources()->getDefaultStreamCurrentDevice());
       updateEnd.cpuWaitOnEvent();
-      delete indexingVecs;
     }
 
     imipqGpu.applyExpectedNumAddsPerList();
@@ -254,6 +253,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
     numVecsTile = std::min(numVecsTile, numIndexingVecs);
     numVecsTile = std::min(numVecsTile, (size_t) 10000);
     numVecsTile = std::max(numVecsTile, (size_t)1);
+    tStart = clock();
     for (size_t i = 0; i < numIndexingVecs; i += numVecsTile) {
       size_t currentNumVecsTile = std::min(numVecsTile, numIndexingVecs - i);
       float *indexingVecs;
@@ -265,13 +265,12 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
                                          currentNumVecsTile, i, &dRead);
       }
       assert(d == dRead);
-      tStart = clock();
       imipqGpu.add(currentNumVecsTile, indexingVecs);
-      tEnd = clock();
-      tGpu = (double)(tEnd - tStart) / CLOCKS_PER_SEC;
-      std::cout << "IMIPQ add time on GPU: " << tGpu << std::endl;
       delete indexingVecs;
     }
+    tEnd = clock();
+    tGpu = (double)(tEnd - tStart) / CLOCKS_PER_SEC;
+    std::cout << "IMIPQ add time on GPU: " << tGpu << std::endl;
   }
 
   std::cout << "maxListLength: " << imipqGpu.getMaxListLength() << std::endl;
