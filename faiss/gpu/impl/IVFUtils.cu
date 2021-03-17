@@ -109,6 +109,32 @@ getResultLengths(int coarseCodebookSize,
   }
 }
 
+__global__ void getResultLengths(int coarseCodebookSize,
+                                 Tensor<ushort2, 2, true> topQueryToCentroid,
+                                 Tensor<unsigned int, 1, true> listOffsets,
+                                 int totalSize, Tensor<int, 2, true> length) {
+  int linearThreadId = blockIdx.x * blockDim.x + threadIdx.x;
+  if (linearThreadId >= totalSize) {
+    return;
+  }
+
+  int nprobe = topQueryToCentroid.getSize(1);
+  int queryId = linearThreadId / nprobe;
+  int listId = linearThreadId % nprobe;
+
+  ushort2 centroidId2 = topQueryToCentroid[queryId][listId];
+  // Safety guard in case NaNs in input cause no list ID to be generated
+  if (centroidId2.x != Limits<ushort>::getMax() &&
+      centroidId2.y != Limits<ushort>::getMax()) {
+    auto multiIndexId = toMultiIndex<ushort, int>(coarseCodebookSize,
+                                                  centroidId2.x, centroidId2.y);
+    int listLength = listOffsets[multiIndexId + 1] - listOffsets[multiIndexId];
+    length[queryId][listId] = listLength;
+  } else {
+    length[queryId][listId] = 0;
+  }
+}
+
 void runCalcListOffsets(GpuResources* res,
                         int coarseCodebookSize,
                         Tensor<ushort2, 2, true>& topQueryToCentroid,
@@ -131,6 +157,50 @@ void runCalcListOffsets(GpuResources* res,
     coarseCodebookSize,
     topQueryToCentroid,
     listLengths,
+    totalSize,
+    prefixSumOffsets);
+  CUDA_TEST_ERROR();
+
+  // Prefix sum of the indices, so we know where the intermediate
+  // results should be maintained
+  // Thrust wants a place for its temporary allocations, so provide
+  // one, so it won't call cudaMalloc/Free if we size it sufficiently
+  GpuResourcesThrustAllocator alloc(res,
+                                    stream,
+                                    thrustMem.data(),
+                                    thrustMem.getSizeInBytes());
+
+  thrust::inclusive_scan(thrust::cuda::par(alloc).on(stream),
+                         prefixSumOffsets.data(),
+                         prefixSumOffsets.data() + totalSize,
+                         prefixSumOffsets.data());
+  CUDA_TEST_ERROR();
+}
+
+/// Function for multi-pass scanning that collects the length of
+/// intermediate results for all (query, probe) pair
+void runCalcListOffsets(GpuResources* res,
+                        int coarseCodebookSize,
+                        Tensor<ushort2, 2, true>& topQueryToCentroid,
+                        Tensor<unsigned int, 1, true> &listOffsets,
+                        Tensor<int, 2, true>& prefixSumOffsets,
+                        Tensor<char, 1, true>& thrustMem,
+                        cudaStream_t stream){
+  FAISS_ASSERT(topQueryToCentroid.getSize(0) == prefixSumOffsets.getSize(0));
+  FAISS_ASSERT(topQueryToCentroid.getSize(1) == prefixSumOffsets.getSize(1));
+
+  int totalSize = topQueryToCentroid.numElements();
+
+  int numThreads = std::min(totalSize, getMaxThreadsCurrentDevice());
+  int numBlocks = utils::divUp(totalSize, numThreads);
+
+  auto grid = dim3(numBlocks);
+  auto block = dim3(numThreads);
+
+  getResultLengths<<<grid, block, 0, stream>>>(
+    coarseCodebookSize,
+    topQueryToCentroid,
+    listOffsets,
     totalSize,
     prefixSumOffsets);
   CUDA_TEST_ERROR();

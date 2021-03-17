@@ -16,6 +16,33 @@
 namespace faiss {
 namespace gpu {
 
+__global__ void
+imiUpdateStartOffsets(Tensor<unsigned int, 1, true> listStartOffsets,
+                      Tensor<unsigned int, 1, true> newlistStartOffsets) {
+  int vec = blockIdx.x * blockDim.x + threadIdx.x;
+
+  if (vec >= newlistStartOffsets.getSize(0)) {
+    return;
+  }
+
+  listStartOffsets[vec] += newlistStartOffsets[vec];
+}
+
+void runIMIUpdateStartOffsets(
+    Tensor<unsigned int, 1, true> &listStartOffsets,
+    Tensor<unsigned int, 1, true> &newlistStartOffsets, cudaStream_t stream) {
+  FAISS_ASSERT(newlistStartOffsets.getSize(0) == listStartOffsets.getSize(0));
+
+  int num = newlistStartOffsets.getSize(0);
+  int threads = std::min(num, getMaxThreadsCurrentDevice());
+  int blocks = utils::divUp(num, threads);
+
+  imiUpdateStartOffsets<<<blocks, threads, 0, stream>>>(listStartOffsets,
+                                                        newlistStartOffsets);
+
+  CUDA_TEST_ERROR();
+}
+
 // Appends new indices for vectors being added to the IMI indices lists
 __global__ void imiIndicesAppend(int codebookSize,
                                  Tensor<ushort2, 1, true> listIds,
@@ -72,6 +99,35 @@ __global__ void imiIndicesAppend(int codebookSize,
   auto index = indices[vec];
 
   listIndices[listId][offset] = (T)index;
+}
+
+// Appends new indices for vectors being added to the IMI indices lists
+template <typename T>
+__global__ void imiIndicesAppend(int codebookSize,
+                                 Tensor<ushort2, 1, true> listIds,
+                                 Tensor<int, 1, true> listOffset,
+                                 Tensor<Index::idx_t, 1, true> indices,
+                                 Tensor<T, 1, true> listIndices,
+                                 Tensor<int, 1, true> listStartOffsets) {
+  int vec = blockIdx.x * blockDim.x + threadIdx.x;
+
+  if (vec >= listIds.getSize(0)) {
+    return;
+  }
+
+  ushort2 listId2 = listIds[vec];
+  int listId = toMultiIndex<ushort, int>(codebookSize, listId2.x, listId2.y);
+  int offset = listOffset[vec];
+
+  // Add vector could be invalid (contains NaNs etc)
+  if (listId == -1 || offset == -1) {
+    return;
+  }
+
+  auto index = indices[vec];
+  auto startOffset = listStartOffsets[listId];
+
+  listIndices[startOffset + offset] = (T)index;
 }
 
 void runIMIIndicesAppend(int codebookSize, Tensor<ushort2, 1, true> &listIds,
@@ -135,6 +191,51 @@ void runIMIIndicesAppend(int codebookSize, Tensor<ushort2, 1, true> &listIds,
                          cudaStream_t stream) {
   runIMIIndicesAppendT<Index::idx_t>(codebookSize, listIds, listOffset, indices,
                                      opt, listIndices, stream);
+}
+
+template <typename T>
+void runIMIIndicesAppendT(int codebookSize, Tensor<ushort2, 1, true> &listIds,
+                          Tensor<int, 1, true> &listOffset,
+                          Tensor<Index::idx_t, 1, true> &indices,
+                          IndicesOptions opt, Tensor<T, 1, true> &listIndices,
+                          Tensor<int, 1, true> &listStartOffsets,
+                          cudaStream_t stream) {
+  FAISS_ASSERT(opt == INDICES_CPU || opt == INDICES_IVF ||
+               opt == INDICES_32_BIT || opt == INDICES_64_BIT);
+
+  if (opt != INDICES_CPU && opt != INDICES_IVF) {
+    int num = listIds.getSize(0);
+    int threads = std::min(num, getMaxThreadsCurrentDevice());
+    int blocks = utils::divUp(num, threads);
+
+    imiIndicesAppend<<<blocks, threads, 0, stream>>>(
+        codebookSize, listIds, listOffset, indices, listIndices,
+        listStartOffsets);
+
+    CUDA_TEST_ERROR();
+  }
+}
+
+void runIMIIndicesAppend(int codebookSize, Tensor<ushort2, 1, true> &listIds,
+                         Tensor<int, 1, true> &listOffset,
+                         Tensor<Index::idx_t, 1, true> &indices,
+                         IndicesOptions opt, Tensor<int, 1, true> &listIndices,
+                         Tensor<int, 1, true> &listStartOffsets,
+                         cudaStream_t stream) {
+  runIMIIndicesAppendT<int>(codebookSize, listIds, listOffset, indices, opt,
+                            listIndices, listStartOffsets, stream);
+}
+
+void runIMIIndicesAppend(int codebookSize, Tensor<ushort2, 1, true> &listIds,
+                         Tensor<int, 1, true> &listOffset,
+                         Tensor<Index::idx_t, 1, true> &indices,
+                         IndicesOptions opt,
+                         Tensor<Index::idx_t, 1, true> &listIndices,
+                         Tensor<int, 1, true> &listStartOffsets,
+                         cudaStream_t stream) {
+  runIMIIndicesAppendT<Index::idx_t>(codebookSize, listIds, listOffset, indices,
+                                     opt, listIndices, listStartOffsets,
+                                     stream);
 }
 
 //
@@ -203,6 +304,39 @@ __global__ void imipqAppend(int codebookSize, Tensor<ushort2, 1, true> listIds,
   }
 }
 
+__global__ void imipqAppend(int codebookSize, Tensor<ushort2, 1, true> listIds,
+                            Tensor<int, 1, true> listOffset,
+                            Tensor<uint8_t, 2, true> encodings,
+                            Tensor<uint8_t, 1, true, long> listCodes,
+                            Tensor<int, 1, true> listStartOffsets,
+                            int encodingNumBytes) {
+  int encodingToAdd = blockIdx.x * blockDim.x + threadIdx.x;
+
+  if (encodingToAdd >= listIds.getSize(0)) {
+    return;
+  }
+
+  ushort2 listId2 = listIds[encodingToAdd];
+  int listId = toMultiIndex<ushort, int>(codebookSize, listId2.x, listId2.y);
+  int vectorNumInList = listOffset[encodingToAdd];
+
+  // Add vector could be invalid (contains NaNs etc)
+  if (listId == -1 || vectorNumInList == -1) {
+    return;
+  }
+
+  auto encoding = encodings[encodingToAdd];
+  size_t startOffset = (size_t)listStartOffsets[listId] * encodingNumBytes;
+
+  // Layout with dimensions innermost
+  size_t codeStart = startOffset + vectorNumInList * encodings.getSize(1);
+
+  // FIXME: stride with threads instead of single thread
+  for (int i = 0; i < encodings.getSize(1); ++i) {
+    listCodes[codeStart + i] = encoding[i];
+  }
+}
+
 void runIMIPQAppend(int codebookSize, Tensor<ushort2, 1, true> &listIds,
                     Tensor<int, 1, true> &listOffset,
                     Tensor<uint8_t, 2, true> &encodings,
@@ -227,6 +361,22 @@ void runIMIPQAppend(int codebookSize, Tensor<ushort2, 1, true> &listIds,
 
   imipqAppend<<<threads, blocks, 0, stream>>>(codebookSize, listIds, listOffset,
                                               encodings, listCodes);
+
+  CUDA_TEST_ERROR();
+}
+
+void runIMIPQAppend(int codebookSize, Tensor<ushort2, 1, true> &listIds,
+                    Tensor<int, 1, true> &listOffset,
+                    Tensor<uint8_t, 2, true> &encodings,
+                    Tensor<uint8_t, 1, true, long> &listCodes,
+                    Tensor<int, 1, true> &listStartOffsets,
+                    int encodingNumBytes, cudaStream_t stream) {
+  int threads = std::min(listIds.getSize(0), getMaxThreadsCurrentDevice());
+  int blocks = utils::divUp(listIds.getSize(0), threads);
+
+  imipqAppend<<<threads, blocks, 0, stream>>>(
+      codebookSize, listIds, listOffset, encodings, listCodes, listStartOffsets,
+      encodingNumBytes);
 
   CUDA_TEST_ERROR();
 }

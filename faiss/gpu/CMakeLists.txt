@@ -14,6 +14,7 @@ target_sources(faiss PRIVATE
   GpuIndexFlat.cu
   GpuIndexIMI.cu
   GpuIndexIMIPQ.cu
+  GpuIndexIMIPQv2.cu
   GpuIndexIVF.cu
   GpuIndexIVFFlat.cu
   GpuIndexIVFPQ.cu
@@ -28,7 +29,9 @@ target_sources(faiss PRIVATE
   impl/FlatIndex.cu
   impl/IMIAppend.cu
   impl/IMIBase.cu
+  impl/IMIBasev2.cu
   impl/IMIPQ.cu
+  impl/IMIPQv2.cu
   impl/IVFAppend.cu
   impl/IVFBase.cu
   impl/IVFFlat.cu
@@ -119,6 +122,7 @@ set(FAISS_GPU_HEADERS
   GpuIndexFlat.h
   GpuIndexIMI.h
   GpuIndexIMIPQ.h
+  GpuIndexIMIPQv2.h
   GpuIndexIVF.h
   GpuIndexIVFFlat.h
   GpuIndexIVFPQ.h
@@ -135,7 +139,9 @@ set(FAISS_GPU_HEADERS
   impl/FlatIndex.cuh
   impl/IMIAppend.cuh
   impl/IMIBase.cuh
+  impl/IMIBasev2.cuh
   impl/IMIPQ.cuh
+  impl/IMIPQv2.cuh
   impl/GeneralDistance.cuh
   impl/GpuScalarQuantizer.cuh
   impl/IVFAppend.cuh
