@@ -25,7 +25,8 @@ imiUpdateStartOffsets(Tensor<unsigned int, 1, true> listStartOffsets,
     return;
   }
 
-  listStartOffsets[vec] = newlistStartOffsets[vec];
+  unsigned int offset = newlistStartOffsets[vec];
+  listStartOffsets[vec] = offset;
 }
 
 void runIMIUpdateStartOffsets(
