@@ -27,11 +27,11 @@ IMIBasev2::IMIBasev2(GpuResources *resources, MultiIndex2 *quantizer,
       numLists_(quantizer->getSize()), interleavedLayout_(interleavedLayout),
       indicesOptions_(indicesOptions), space_(space),
       deviceListData_(resources,
-                      makeDevAlloc(AllocType::Other,
-                                   resources->getDefaultStreamCurrentDevice())),
+                      AllocInfo(AllocType::IVFLists, getCurrentDevice(), space_,
+                                resources_->getDefaultStreamCurrentDevice())),
       deviceListIndices_(
-          resources, makeDevAlloc(AllocType::Other,
-                                  resources->getDefaultStreamCurrentDevice())),
+          resources, AllocInfo(AllocType::IVFLists, getCurrentDevice(), space_,
+                               resources_->getDefaultStreamCurrentDevice())),
       deviceListOffsets_(
           resources, makeDevAlloc(AllocType::Other,
                                   resources->getDefaultStreamCurrentDevice())),
@@ -57,18 +57,11 @@ void IMIBasev2::reserveMemory(
   int lastListId = -1;
   unsigned int offset = 0;
   for (int listId = 0; listId < numLists_; listId++) {
+    newlistStartOffsets[listId] = offset;
+
     auto entry = expectedNumAddsPerList->find(listId);
     if (entry != expectedNumAddsPerList->end()) {
       FAISS_ASSERT(listId == entry->first);
-      newlistStartOffsets[listId] = offset;
-
-      for (int currentListId = listId - 1;
-           currentListId >= 0 && expectedNumAddsPerList->find(currentListId) ==
-                                     expectedNumAddsPerList->end();
-           currentListId--) {
-        newlistStartOffsets[currentListId] = offset;
-      }
-
       auto &numAdds = entry->second;
       offset += numAdds;
       lastListId = listId;
