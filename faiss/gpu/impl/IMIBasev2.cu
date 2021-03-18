@@ -60,11 +60,7 @@ void IMIBasev2::reserveMemory(
     auto entry = expectedNumAddsPerList->find(listId);
     if (entry != expectedNumAddsPerList->end()) {
       FAISS_ASSERT(listId == entry->first);
-
-      auto &numAdds = entry->second;
       newlistStartOffsets[listId] = offset;
-      offset += numAdds;
-      lastListId = listId;
 
       for (int currentListId = listId - 1;
            currentListId >= 0 && expectedNumAddsPerList->find(currentListId) ==
@@ -72,28 +68,32 @@ void IMIBasev2::reserveMemory(
            currentListId--) {
         newlistStartOffsets[currentListId] = offset;
       }
+
+      auto &numAdds = entry->second;
+      offset += numAdds;
+      lastListId = listId;
     }
   }
 
   if (lastListId >= 0) {
-    auto lastOffset = newlistStartOffsets[lastListId];
-    FAISS_ASSERT(lastOffset <= std::numeric_limits<int>::max());
-    for (int listId = lastListId + 1; listId < numLists_; listId++) {
-      newlistStartOffsets[listId] = 2 * lastOffset;
+    FAISS_ASSERT(offset <= std::numeric_limits<int>::max());
+    for (int listId = lastListId + 1; listId < numLists_ + 1; listId++) {
+      newlistStartOffsets[listId] = offset;
     }
+
+    auto stream = resources_->getDefaultStreamCurrentDevice();
+
+    DeviceTensor<unsigned int, 1, true> deviceListOffsetsTensor(
+        deviceListOffsets_.data(), {(int)deviceListOffsets_.size()});
+    DeviceTensor<unsigned int, 1, true> newlistStartOffsetsDevice(
+        resources_, makeTempAlloc(AllocType::Other, stream),
+        newlistStartOffsets);
+
+    runIMIUpdateStartOffsets(deviceListOffsetsTensor, newlistStartOffsetsDevice,
+                             stream);
+
+    isMemoryReserved_ = true;
   }
-
-  auto stream = resources_->getDefaultStreamCurrentDevice();
-
-  DeviceTensor<unsigned int, 1, true> deviceListOffsetsTensor(
-      deviceListOffsets_.data(), {(int)deviceListOffsets_.size()});
-  DeviceTensor<unsigned int, 1, true> newlistStartOffsetsDevice(
-      resources_, makeTempAlloc(AllocType::Other, stream), newlistStartOffsets);
-
-  runIMIUpdateStartOffsets(deviceListOffsetsTensor, newlistStartOffsetsDevice,
-                           stream);
-
-  isMemoryReserved_ = true;
 }
 
 void IMIBasev2::reset() {
@@ -167,7 +167,7 @@ int IMIBasev2::getListLength(int listId) {
   unsigned int offsets[2];
   fromDevice<unsigned int>(deviceListOffsets_.data() + listId, offsets, 2,
                            stream);
-  listLength = offsets[1] - offsets[2];
+  listLength = offsets[1] - offsets[0];
 
   CudaEvent copyEnd(resources_->getDefaultStreamCurrentDevice());
   copyEnd.cpuWaitOnEvent();
@@ -182,6 +182,24 @@ int IMIBasev2::getAllListsLength() {
   return length;
 }
 
+int IMIBasev2::getListOffset(int listId) {
+  FAISS_THROW_IF_NOT_FMT(listId < numLists_,
+                         "IVF list %d is out of bounds (%d lists total)",
+                         listId, numLists_);
+
+  if (!isMemoryReserved_) {
+    return 0;
+  }
+
+  auto stream = resources_->getDefaultStreamCurrentDevice();
+  unsigned int offset = 0;
+  fromDevice<unsigned int>(deviceListOffsets_.data() + listId, &offset, 1,
+                           stream);
+  CudaEvent copyEnd(resources_->getDefaultStreamCurrentDevice());
+  copyEnd.cpuWaitOnEvent();
+  return offset;
+}
+
 std::vector<Index::idx_t> IMIBasev2::getListIndices(int listId) {
   FAISS_THROW_IF_NOT_FMT(listId < numLists_,
                          "IVF list %d is out of bounds (%d lists total)",
@@ -192,11 +210,12 @@ std::vector<Index::idx_t> IMIBasev2::getListIndices(int listId) {
   }
 
   auto stream = resources_->getDefaultStreamCurrentDevice();
+  int listOffset = getListOffset(listId);
   int listLength = getListLength(listId);
 
   if (indicesOptions_ == INDICES_32_BIT) {
     std::vector<int> intInd(listLength);
-    fromDevice<int>((int *)deviceListIndices_.data() + listLength,
+    fromDevice<int>((int *)deviceListIndices_.data() + listOffset,
                     intInd.data(), listLength, stream);
 
     std::vector<Index::idx_t> out(intInd.size());
@@ -208,7 +227,7 @@ std::vector<Index::idx_t> IMIBasev2::getListIndices(int listId) {
   } else if (indicesOptions_ == INDICES_64_BIT) {
     std::vector<Index::idx_t> out(listLength);
     fromDevice<Index::idx_t>((Index::idx_t *)deviceListIndices_.data() +
-                                 listLength,
+                                 listOffset,
                              out.data(), listLength, stream);
 
     return out;
@@ -237,12 +256,14 @@ std::vector<uint8_t> IMIBasev2::getListVectorData(int listId, bool gpuFormat) {
   }
 
   auto stream = resources_->getDefaultStreamCurrentDevice();
+  int listOffset = getListOffset(listId);
+  int listOffsetNumBytes = getGpuVectorsEncodingSize_(listOffset);
   int listLength = getListLength(listId);
-  int listNumBytes = getGpuVectorsEncodingSize_(listLength);
+  int listLengthNumBytes = getGpuVectorsEncodingSize_(listLength);
 
-  std::vector<uint8_t> gpuCodes(listNumBytes);
-  fromDevice<uint8_t>(deviceListData_.data() + listNumBytes, gpuCodes.data(),
-                      listNumBytes, stream);
+  std::vector<uint8_t> gpuCodes(listLengthNumBytes);
+  fromDevice<uint8_t>(deviceListData_.data() + listOffsetNumBytes,
+                      gpuCodes.data(), listLengthNumBytes, stream);
 
   if (gpuFormat) {
     return gpuCodes;

@@ -54,6 +54,10 @@ public:
   /// list
   int getListLength(int listId);
 
+  /// For debugging purposes, return the list offset of a particular
+  /// list
+  int getListOffset(int listId);
+
   /// For debugging purposes, return the length of all lists
   int getAllListsLength();
 
