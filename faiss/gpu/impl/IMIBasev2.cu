@@ -217,6 +217,8 @@ std::vector<Index::idx_t> IMIBasev2::getListIndices(int listId) {
     std::vector<int> intInd(listLength);
     fromDevice<int>((int *)deviceListIndices_.data() + listOffset,
                     intInd.data(), listLength, stream);
+    CudaEvent copyEnd(resources_->getDefaultStreamCurrentDevice());
+    copyEnd.cpuWaitOnEvent();
 
     std::vector<Index::idx_t> out(intInd.size());
     for (size_t i = 0; i < intInd.size(); ++i) {
@@ -229,6 +231,8 @@ std::vector<Index::idx_t> IMIBasev2::getListIndices(int listId) {
     fromDevice<Index::idx_t>((Index::idx_t *)deviceListIndices_.data() +
                                  listOffset,
                              out.data(), listLength, stream);
+    CudaEvent copyEnd(resources_->getDefaultStreamCurrentDevice());
+    copyEnd.cpuWaitOnEvent();
 
     return out;
   } else if (indicesOptions_ == INDICES_CPU) {
@@ -264,7 +268,8 @@ std::vector<uint8_t> IMIBasev2::getListVectorData(int listId, bool gpuFormat) {
   std::vector<uint8_t> gpuCodes(listLengthNumBytes);
   fromDevice<uint8_t>(deviceListData_.data() + listOffsetNumBytes,
                       gpuCodes.data(), listLengthNumBytes, stream);
-
+  CudaEvent copyEnd(resources_->getDefaultStreamCurrentDevice());
+  copyEnd.cpuWaitOnEvent();
   if (gpuFormat) {
     return gpuCodes;
   } else {

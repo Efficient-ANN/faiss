@@ -58,26 +58,18 @@ void runPQScanMultiPassPrecomputed(
     Tensor<Index::idx_t, 2, true> &outIndices, GpuResources *res);
 
 void runPQScanMultiPassPrecomputed(
-    Tensor<float, 2, true> &precompTerm1,
-     NoTypeTensor<4, true> &precompTerm2,
-    NoTypeTensor<4, true> &precompTerm3,
-     int coarseCodebookSize,
-    Tensor<ushort2, 2, true> &topQueryToCentroid,
-     bool useFloat16Lookup,
-    bool interleavedCodeLayout,
-     int bitsPerSubQuantizer,
-      int numSubQuantizers,
-    int numSubQuantizerCodes, 
-    Tensor<unsigned int, 1, true> &listOffsets,
-    Tensor<uint8_t, 1, true, long> &listCodes,
-     Tensor<int, 1, true> &listIndices,
-    IndicesOptions indicesOptions,
-     int maxListLength, int k,
+    Tensor<float, 2, true> &precompTerm1, NoTypeTensor<4, true> &precompTerm2,
+    NoTypeTensor<4, true> &precompTerm3, int coarseCodebookSize,
+    Tensor<ushort2, 2, true> &topQueryToCentroid, bool useFloat16Lookup,
+    bool interleavedCodeLayout, int bitsPerSubQuantizer, int numSubQuantizers,
+    int numSubQuantizerCodes, Tensor<unsigned int, 1, true> &listOffsets,
+    Tensor<uint8_t, 1, true, long> &listCodes, int codeNumBytes,
+    Tensor<int, 1, true> &listIndices, IndicesOptions indicesOptions,
+    int maxListLength, int k,
     // output
     Tensor<float, 2, true> &outDistances,
     // output
-    Tensor<Index::idx_t, 2, true> &outIndices,
-     GpuResources *res);
+    Tensor<Index::idx_t, 2, true> &outIndices, GpuResources *res);
 
 void runPQScanMultiPassPrecomputed(
     Tensor<float, 2, true> &precompTerm1, NoTypeTensor<4, true> &precompTerm2,
@@ -85,7 +77,7 @@ void runPQScanMultiPassPrecomputed(
     Tensor<ushort2, 2, true> &topQueryToCentroid, bool useFloat16Lookup,
     bool interleavedCodeLayout, int bitsPerSubQuantizer, int numSubQuantizers,
     int numSubQuantizerCodes, Tensor<unsigned int, 1, true> &listOffsets,
-    Tensor<uint8_t, 1, true, long> &listCodes,
+    Tensor<uint8_t, 1, true, long> &listCodes, int codeNumBytes,
     Tensor<Index::idx_t, 1, true> &listIndices, IndicesOptions indicesOptions,
     int maxListLength, int k,
     // output

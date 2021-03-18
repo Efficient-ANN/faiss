@@ -638,8 +638,8 @@ void IMIPQv2::runPQPrecomputedCodes_(
         quantizer_->getCodebookSize(), coarseIndices, useFloat16LookupTables_,
         interleavedLayout_, bitsPerSubQuantizer_, numSubQuantizers_,
         numSubQuantizerCodes_, deviceListOffsetsTensor, deviceListDataTensor,
-        deviceListIndexTensor, indicesOptions_, maxListLength_, k, outDistances,
-        outIndices, resources_);
+        numSubQuantizers_, deviceListIndexTensor, indicesOptions_,
+        maxListLength_, k, outDistances, outIndices, resources_);
   } else {
     DeviceTensor<int, 1, true> deviceListIndexTensor(
         (int *)deviceListIndices_.data(),
@@ -652,8 +652,8 @@ void IMIPQv2::runPQPrecomputedCodes_(
         quantizer_->getCodebookSize(), coarseIndices, useFloat16LookupTables_,
         interleavedLayout_, bitsPerSubQuantizer_, numSubQuantizers_,
         numSubQuantizerCodes_, deviceListOffsetsTensor, deviceListDataTensor,
-        deviceListIndexTensor, indicesOptions_, maxListLength_, k, outDistances,
-        outIndices, resources_);
+        numSubQuantizers_, deviceListIndexTensor, indicesOptions_,
+        maxListLength_, k, outDistances, outIndices, resources_);
   }
 }
 

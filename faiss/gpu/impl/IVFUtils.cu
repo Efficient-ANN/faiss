@@ -126,9 +126,9 @@ __global__ void getResultLengths(int coarseCodebookSize,
   // Safety guard in case NaNs in input cause no list ID to be generated
   if (centroidId2.x != Limits<ushort>::getMax() &&
       centroidId2.y != Limits<ushort>::getMax()) {
-    auto multiIndexId = toMultiIndex<ushort, int>(coarseCodebookSize,
+    auto centroidId = toMultiIndex<ushort, int>(coarseCodebookSize,
                                                   centroidId2.x, centroidId2.y);
-    int listLength = listOffsets[multiIndexId + 1] - listOffsets[multiIndexId];
+    int listLength = listOffsets[centroidId + 1] - listOffsets[centroidId];
     length[queryId][listId] = listLength;
   } else {
     length[queryId][listId] = 0;

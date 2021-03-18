@@ -14,7 +14,6 @@
 #include <faiss/gpu/utils/DeviceUtils.h>
 #include <faiss/gpu/utils/StaticUtils.h>
 #include <faiss/utils/utils.h>
-#include <iostream>
 #include <utility>
 
 namespace faiss {
