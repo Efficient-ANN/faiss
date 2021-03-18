@@ -36,6 +36,8 @@ public:
   void reserveMemory(const std::unordered_map<int, int> *expectedNumAddsPerList,
                      int numVecs);
 
+  void reset();
+
   /// Clear out all inverted lists, but retain the coarse quantizer
   /// and the product quantizer info
   void reset(int numVecs);

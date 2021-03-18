@@ -38,7 +38,7 @@ IMIBasev2::IMIBasev2(GpuResources *resources, MultiIndex2 *quantizer,
       currentListLengths_(new std::vector<int>()), maxListLength_(0),
       isMemoryReserved_(false), numVecs_(0) {
   FAISS_ASSERT(numLists_ < std::numeric_limits<int>::max());
-  reset(numVecs_);
+  reset();
 }
 
 IMIBasev2::~IMIBasev2() {}
@@ -94,6 +94,17 @@ void IMIBasev2::reserveMemory(
                            stream);
 
   isMemoryReserved_ = true;
+}
+
+void IMIBasev2::reset() {
+  deviceListData_.clear();
+  deviceListIndices_.clear();
+  deviceListOffsets_.clear();
+  currentListLengths_->clear();
+
+  maxListLength_ = 0;
+
+  isMemoryReserved_ = false;
 }
 
 void IMIBasev2::reset(int numVecs) {
