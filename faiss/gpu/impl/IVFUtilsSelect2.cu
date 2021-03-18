@@ -412,8 +412,7 @@ pass2SelectLists(Tensor<float, 2, true> heapDistances,
 
       // This gives us our final index
       if (opt == INDICES_32_BIT || opt == INDICES_64_BIT) {
-        auto listIndicesPointer =
-            listIndices.data() + listOffsets[listId + 1] - listOffsets[listId];
+        auto listIndicesPointer = listIndices.data() + listOffsets[listId];
         index = listIndicesPointer[listOffset];
       } else {
         index = ((Index::idx_t)listId << 32 | (Index::idx_t)listOffset);
@@ -639,31 +638,31 @@ void runPass2SelectLists(
 }
 
 void runPass2SelectLists(
-  Tensor<float, 2, true> &heapDistances, Tensor<int, 2, true> &heapIndices,
-  Tensor<int, 1, true> &listIndices, IndicesOptions indicesOptions,
-  Tensor<unsigned int, 1, true> &listOffsets,
-  Tensor<int, 2, true> &prefixSumOffsets, int coarseCodebookSize,
-  Tensor<ushort2, 2, true> &topQueryToCentroid, int k, bool chooseLargest,
-  Tensor<float, 2, true> &outDistances,
-  Tensor<Index::idx_t, 2, true> &outIndices, cudaStream_t stream) {
-runPass2SelectLists<int>(heapDistances, heapIndices, listIndices,
-                         indicesOptions, listOffsets, prefixSumOffsets,
-                         coarseCodebookSize, topQueryToCentroid, k,
-                         chooseLargest, outDistances, outIndices, stream);
+    Tensor<float, 2, true> &heapDistances, Tensor<int, 2, true> &heapIndices,
+    Tensor<int, 1, true> &listIndices, IndicesOptions indicesOptions,
+    Tensor<unsigned int, 1, true> &listOffsets,
+    Tensor<int, 2, true> &prefixSumOffsets, int coarseCodebookSize,
+    Tensor<ushort2, 2, true> &topQueryToCentroid, int k, bool chooseLargest,
+    Tensor<float, 2, true> &outDistances,
+    Tensor<Index::idx_t, 2, true> &outIndices, cudaStream_t stream) {
+  runPass2SelectLists<int>(heapDistances, heapIndices, listIndices,
+                           indicesOptions, listOffsets, prefixSumOffsets,
+                           coarseCodebookSize, topQueryToCentroid, k,
+                           chooseLargest, outDistances, outIndices, stream);
 }
 
 void runPass2SelectLists(
-  Tensor<float, 2, true> &heapDistances, Tensor<int, 2, true> &heapIndices,
-  Tensor<Index::idx_t, 1, true> &listIndices, IndicesOptions indicesOptions,
-  Tensor<unsigned int, 1, true> &listOffsets,
-  Tensor<int, 2, true> &prefixSumOffsets, int coarseCodebookSize,
-  Tensor<ushort2, 2, true> &topQueryToCentroid, int k, bool chooseLargest,
-  Tensor<float, 2, true> &outDistances,
-  Tensor<Index::idx_t, 2, true> &outIndices, cudaStream_t stream) {
-runPass2SelectLists<Index::idx_t>(
-    heapDistances, heapIndices, listIndices, indicesOptions, listOffsets,
-    prefixSumOffsets, coarseCodebookSize, topQueryToCentroid, k,
-    chooseLargest, outDistances, outIndices, stream);
+    Tensor<float, 2, true> &heapDistances, Tensor<int, 2, true> &heapIndices,
+    Tensor<Index::idx_t, 1, true> &listIndices, IndicesOptions indicesOptions,
+    Tensor<unsigned int, 1, true> &listOffsets,
+    Tensor<int, 2, true> &prefixSumOffsets, int coarseCodebookSize,
+    Tensor<ushort2, 2, true> &topQueryToCentroid, int k, bool chooseLargest,
+    Tensor<float, 2, true> &outDistances,
+    Tensor<Index::idx_t, 2, true> &outIndices, cudaStream_t stream) {
+  runPass2SelectLists<Index::idx_t>(
+      heapDistances, heapIndices, listIndices, indicesOptions, listOffsets,
+      prefixSumOffsets, coarseCodebookSize, topQueryToCentroid, k,
+      chooseLargest, outDistances, outIndices, stream);
 }
 
 
