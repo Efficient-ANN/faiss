@@ -256,7 +256,7 @@ void IMIPQv2::appendVectors_(Tensor<float, 2, true> &vecs,
   }
 
   DeviceTensor<uint8_t, 1, true, long> deviceListDataTensor(
-      deviceListData_.data(), {(int)deviceListData_.size()});
+      deviceListData_.data(), {(long)deviceListData_.size()});
 
   runIMIPQAppend(quantizer_->getCodebookSize(), listIds, listOffset, encodings,
                  deviceListDataTensor, deviceListOffsetsTensor,
@@ -624,7 +624,7 @@ void IMIPQv2::runPQPrecomputedCodes_(
   DeviceTensor<unsigned int, 1, true> deviceListOffsetsTensor(
       deviceListOffsets_.data(), {(int)deviceListOffsets_.size()});
   DeviceTensor<uint8_t, 1, true, long> deviceListDataTensor(
-      deviceListData_.data(), {(int)deviceListData_.size()});
+      deviceListData_.data(), {(long)deviceListData_.size()});
 
   if (indicesOptions_ == INDICES_64_BIT) {
     DeviceTensor<Index::idx_t, 1, true> deviceListIndexTensor(
@@ -635,21 +635,11 @@ void IMIPQv2::runPQPrecomputedCodes_(
         coarseDistances, // term 1
         term2,           // term 2
         term3,           // term 3
-        quantizer_->getCodebookSize(),
-         coarseIndices,
-          useFloat16LookupTables_,
-        interleavedLayout_,
-         bitsPerSubQuantizer_,
-          numSubQuantizers_,
-        numSubQuantizerCodes_,
-         deviceListOffsetsTensor,
-          deviceListDataTensor,
-        deviceListIndexTensor,
-         indicesOptions_,
-          maxListLength_,
-           k, outDistances,
-        outIndices,
-         resources_);
+        quantizer_->getCodebookSize(), coarseIndices, useFloat16LookupTables_,
+        interleavedLayout_, bitsPerSubQuantizer_, numSubQuantizers_,
+        numSubQuantizerCodes_, deviceListOffsetsTensor, deviceListDataTensor,
+        deviceListIndexTensor, indicesOptions_, maxListLength_, k, outDistances,
+        outIndices, resources_);
   } else {
     DeviceTensor<int, 1, true> deviceListIndexTensor(
         (int *)deviceListIndices_.data(),
