@@ -77,11 +77,11 @@ __global__ void imiIndicesAppend(int codebookSize,
 
 // Appends new indices for vectors being added to the IMI indices lists
 template <typename T>
-__global__ void imiIndicesAppend(int codebookSize,
-                                 Tensor<ushort2, 1, true> listIds,
-                                 Tensor<int, 1, true> listOffset,
-                                 Tensor<Index::idx_t, 1, true> indices,
-                                 Tensor<T *, 1, true> listIndices) {
+__global__ void imiIndicesAppendPointer(int codebookSize,
+                                        Tensor<ushort2, 1, true> listIds,
+                                        Tensor<int, 1, true> listOffset,
+                                        Tensor<Index::idx_t, 1, true> indices,
+                                        Tensor<T *, 1, true> listIndices) {
   int vec = blockIdx.x * blockDim.x + threadIdx.x;
 
   if (vec >= listIds.getSize(0)) {
@@ -104,12 +104,12 @@ __global__ void imiIndicesAppend(int codebookSize,
 
 // Appends new indices for vectors being added to the IMI indices lists
 template <typename T>
-__global__ void imiIndicesAppend(int codebookSize,
-                                 Tensor<ushort2, 1, true> listIds,
-                                 Tensor<int, 1, true> listOffset,
-                                 Tensor<Index::idx_t, 1, true> indices,
-                                 Tensor<T, 1, true> listIndices,
-                                 Tensor<int, 1, true> listStartOffsets) {
+__global__ void
+imiIndicesAppend(int codebookSize, Tensor<ushort2, 1, true> listIds,
+                 Tensor<int, 1, true> listOffset,
+                 Tensor<Index::idx_t, 1, true> indices,
+                 Tensor<T, 1, true> listIndices,
+                 Tensor<unsigned int, 1, true> listStartOffsets) {
   int vec = blockIdx.x * blockDim.x + threadIdx.x;
 
   if (vec >= listIds.getSize(0)) {
@@ -154,11 +154,13 @@ void runIMIIndicesAppend(int codebookSize, Tensor<ushort2, 1, true> &listIds,
 }
 
 template <typename T>
-void runIMIIndicesAppendT(int codebookSize, Tensor<ushort2, 1, true> &listIds,
-                          Tensor<int, 1, true> &listOffset,
-                          Tensor<Index::idx_t, 1, true> &indices,
-                          IndicesOptions opt, Tensor<T *, 1, true> &listIndices,
-                          cudaStream_t stream) {
+void runIMIIndicesAppendTPointer(int codebookSize,
+                                 Tensor<ushort2, 1, true> &listIds,
+                                 Tensor<int, 1, true> &listOffset,
+                                 Tensor<Index::idx_t, 1, true> &indices,
+                                 IndicesOptions opt,
+                                 Tensor<T *, 1, true> &listIndices,
+                                 cudaStream_t stream) {
   FAISS_ASSERT(opt == INDICES_CPU || opt == INDICES_IVF ||
                opt == INDICES_32_BIT || opt == INDICES_64_BIT);
 
@@ -167,7 +169,7 @@ void runIMIIndicesAppendT(int codebookSize, Tensor<ushort2, 1, true> &listIds,
     int threads = std::min(num, getMaxThreadsCurrentDevice());
     int blocks = utils::divUp(num, threads);
 
-    imiIndicesAppend<<<blocks, threads, 0, stream>>>(
+    imiIndicesAppendPointer<<<blocks, threads, 0, stream>>>(
         codebookSize, listIds, listOffset, indices, listIndices);
 
     CUDA_TEST_ERROR();
@@ -180,8 +182,8 @@ void runIMIIndicesAppend(int codebookSize, Tensor<ushort2, 1, true> &listIds,
                          IndicesOptions opt,
                          Tensor<int *, 1, true> &listIndices,
                          cudaStream_t stream) {
-  runIMIIndicesAppendT<int>(codebookSize, listIds, listOffset, indices, opt,
-                            listIndices, stream);
+  runIMIIndicesAppendTPointer<int>(codebookSize, listIds, listOffset, indices,
+                                   opt, listIndices, stream);
 }
 
 void runIMIIndicesAppend(int codebookSize, Tensor<ushort2, 1, true> &listIds,
@@ -190,8 +192,8 @@ void runIMIIndicesAppend(int codebookSize, Tensor<ushort2, 1, true> &listIds,
                          IndicesOptions opt,
                          Tensor<Index::idx_t *, 1, true> &listIndices,
                          cudaStream_t stream) {
-  runIMIIndicesAppendT<Index::idx_t>(codebookSize, listIds, listOffset, indices,
-                                     opt, listIndices, stream);
+  runIMIIndicesAppendTPointer<Index::idx_t>(codebookSize, listIds, listOffset,
+                                            indices, opt, listIndices, stream);
 }
 
 template <typename T>
@@ -199,7 +201,7 @@ void runIMIIndicesAppendT(int codebookSize, Tensor<ushort2, 1, true> &listIds,
                           Tensor<int, 1, true> &listOffset,
                           Tensor<Index::idx_t, 1, true> &indices,
                           IndicesOptions opt, Tensor<T, 1, true> &listIndices,
-                          Tensor<int, 1, true> &listStartOffsets,
+                          Tensor<unsigned int, 1, true> &listStartOffsets,
                           cudaStream_t stream) {
   FAISS_ASSERT(opt == INDICES_CPU || opt == INDICES_IVF ||
                opt == INDICES_32_BIT || opt == INDICES_64_BIT);
@@ -221,7 +223,7 @@ void runIMIIndicesAppend(int codebookSize, Tensor<ushort2, 1, true> &listIds,
                          Tensor<int, 1, true> &listOffset,
                          Tensor<Index::idx_t, 1, true> &indices,
                          IndicesOptions opt, Tensor<int, 1, true> &listIndices,
-                         Tensor<int, 1, true> &listStartOffsets,
+                         Tensor<unsigned int, 1, true> &listStartOffsets,
                          cudaStream_t stream) {
   runIMIIndicesAppendT<int>(codebookSize, listIds, listOffset, indices, opt,
                             listIndices, listStartOffsets, stream);
@@ -232,7 +234,7 @@ void runIMIIndicesAppend(int codebookSize, Tensor<ushort2, 1, true> &listIds,
                          Tensor<Index::idx_t, 1, true> &indices,
                          IndicesOptions opt,
                          Tensor<Index::idx_t, 1, true> &listIndices,
-                         Tensor<int, 1, true> &listStartOffsets,
+                         Tensor<unsigned int, 1, true> &listStartOffsets,
                          cudaStream_t stream) {
   runIMIIndicesAppendT<Index::idx_t>(codebookSize, listIds, listOffset, indices,
                                      opt, listIndices, listStartOffsets,
@@ -309,7 +311,7 @@ __global__ void imipqAppend(int codebookSize, Tensor<ushort2, 1, true> listIds,
                             Tensor<int, 1, true> listOffset,
                             Tensor<uint8_t, 2, true> encodings,
                             Tensor<uint8_t, 1, true, long> listCodes,
-                            Tensor<int, 1, true> listStartOffsets,
+                            Tensor<unsigned int, 1, true> listStartOffsets,
                             int encodingNumBytes) {
   int encodingToAdd = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -370,7 +372,7 @@ void runIMIPQAppend(int codebookSize, Tensor<ushort2, 1, true> &listIds,
                     Tensor<int, 1, true> &listOffset,
                     Tensor<uint8_t, 2, true> &encodings,
                     Tensor<uint8_t, 1, true, long> &listCodes,
-                    Tensor<int, 1, true> &listStartOffsets,
+                    Tensor<unsigned int, 1, true> &listStartOffsets,
                     int encodingNumBytes, cudaStream_t stream) {
   int threads = std::min(listIds.getSize(0), getMaxThreadsCurrentDevice());
   int blocks = utils::divUp(listIds.getSize(0), threads);
