@@ -14,7 +14,6 @@
 #include <faiss/gpu/utils/DeviceUtils.h>
 #include <faiss/gpu/utils/StaticUtils.h>
 #include <faiss/utils/utils.h>
-#include <iostream>
 #include <utility>
 
 namespace faiss {
@@ -98,7 +97,6 @@ void GpuIndexIMIPQ::applyExpectedNumAddsPerList() {
     for (auto &expectedNumAdds : *expectedNumAddsPerList) {
       numExpectedVecs += expectedNumAdds.second;
     }
-    std::cout << "numExpectedVecs" << numExpectedVecs << std::endl;
     index_->reserveMemory(expectedNumAddsPerList.get());
   }
 }
