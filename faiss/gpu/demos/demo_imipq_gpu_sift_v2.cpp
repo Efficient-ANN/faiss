@@ -232,6 +232,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
       faiss::gpu::CudaEvent updateEnd(
           res.getResources()->getDefaultStreamCurrentDevice());
       updateEnd.cpuWaitOnEvent();
+      delete indexingVecs;
     }
 
     imipqGpu.applyExpectedNumAddsPerList();
