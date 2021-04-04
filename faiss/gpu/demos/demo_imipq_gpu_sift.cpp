@@ -12,7 +12,7 @@
 #include <faiss/Index.h>
 #include <faiss/IndexPQ.h>
 #include <faiss/gpu/GpuCloner.h>
-#include <faiss/gpu/GpuIndexIMIPQ.h>
+#include <faiss/gpu/GpuIndexIMIPQv2.h>
 #include <faiss/gpu/GpuIndicesOptions.h>
 #include <faiss/gpu/StandardGpuResources.h>
 #include <faiss/gpu/utils/DeviceUtils.h>
@@ -96,18 +96,11 @@ size_t calcImiStructureMemSize(size_t d, size_t coarseCodebookSize,
   size_t precomputedMemSize = faiss::gpu::utils::roundUp(
       coarseCodebookSize * subCodebookSize * numSubQuantizers * sizeof(float),
       (size_t)maxPageSize);
-  size_t codesPointersMemSize = faiss::gpu::utils::roundUp(
-      coarseCodebookSize * coarseCodebookSize * sizeof(void *),
-      (size_t)maxPageSize);
-  size_t idsPointersMemSize = faiss::gpu::utils::roundUp(
-      coarseCodebookSize * coarseCodebookSize * sizeof(void *),
-      (size_t)maxPageSize);
-  size_t listsLengthsMemSize = faiss::gpu::utils::roundUp(
-      coarseCodebookSize * coarseCodebookSize * sizeof(int),
+  size_t listOffsetMemSize = faiss::gpu::utils::roundUp(
+      coarseCodebookSize * coarseCodebookSize * sizeof(unsigned int),
       (size_t)maxPageSize);
   return subCodebookSize + coarseQuantizerMemSize + normMemSize +
-         productQuantizerMemSize + precomputedMemSize + codesPointersMemSize +
-         idsPointersMemSize + listsLengthsMemSize;
+         productQuantizerMemSize + precomputedMemSize + listOffsetMemSize;
 }
 
 template <bool isVecFloat>
@@ -117,7 +110,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
                 size_t numIndexingVecs, std::string fileNameQueries,
                 size_t queriesOffset, std::string fileNameGroundTruth,
                 int numQueriesBegin, int numQueriesEnd, int nprobeBegin,
-                int nprobeEnd, int kBegin, int kEnd,
+                int nprobeEnd, int kBegin, int kEnd, long safeMemMargin,
                 std::string fileNameCoarseQuantizer) {
   size_t devFree = 0;
   size_t devTotal = 0;
@@ -130,13 +123,14 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
 
   faiss::gpu::IndicesOptions indiceOptions = faiss::gpu::INDICES_32_BIT;
   /*
-  size_t fixedMemSize = faiss::gpu::GpuIndexIMIPQ::calcMemorySpaceSize(
+  size_t fixedMemSize = faiss::gpu::GpuIndexIMIPQv2::calcMemorySpaceSize(
       coarseCodebookSize * 2, d / 2, false, numIndexingVecs, numSubQuantizers,
       nbitsSubQuantizer, false, indiceOptions);
   */
-  size_t fixedMemSize = faiss::gpu::GpuIndexIMIPQ::calcInvListsMemorySpaceSize(
-      numIndexingVecs, numSubQuantizers, nbitsSubQuantizer, false,
-      indiceOptions);
+  size_t fixedMemSize =
+      faiss::gpu::GpuIndexIMIPQv2::calcInvListsMemorySpaceSize(
+          numIndexingVecs, numSubQuantizers, nbitsSubQuantizer, false,
+          indiceOptions);
   std::cout << "fixedMemSize: " << fixedMemSize << std::endl;
 
   size_t imiStructureMemSize = calcImiStructureMemSize(
@@ -148,7 +142,15 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
       devFree -
       faiss::gpu::utils::roundUp(fixedMemSize + 256, (size_t)maxPageSize) -
       imiStructureMemSize;
-  res.setTempMemory(tempMemory);
+
+  if (safeMemMargin >= 0) {
+    tempMemory += safeMemMargin;
+  } else {
+    safeMemMargin *= -1;
+    tempMemory -= (size_t)safeMemMargin;
+  }
+
+  res.setTempMemory(tempMemory / 256 * 256);
   std::cout << "tempMemory: " << tempMemory << std::endl;
   // res.noTempMemory();
 
@@ -158,7 +160,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
   config.indicesOptions = indiceOptions;
   config.usePrecomputedTables = true;
 
-  faiss::gpu::GpuIndexIMIPQ imipqGpu(
+  faiss::gpu::GpuIndexIMIPQv2 imipqGpu(
       &res, d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer, config);
   clock_t tStart, tEnd;
   double tGpu;
@@ -212,7 +214,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
     size_t maxAddTileSize = (size_t)8 * 1024 * 1024 * 1024;
     size_t numVecsTile = maxAddTileSize / (d * sizeof(float));
     numVecsTile = std::min(numVecsTile, numIndexingVecs);
-    numVecsTile = std::min(numVecsTile, (size_t) 10000);
+    numVecsTile = std::min(numVecsTile, (size_t)10000);
     numVecsTile = std::max(numVecsTile, (size_t)1);
     tStart = clock();
     for (size_t i = 0; i < numIndexingVecs; i += numVecsTile) {
@@ -252,7 +254,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
     size_t maxAddTileSize = (size_t)8 * 1024 * 1024 * 1024;
     size_t numVecsTile = maxAddTileSize / (d * sizeof(float));
     numVecsTile = std::min(numVecsTile, numIndexingVecs);
-    numVecsTile = std::min(numVecsTile, (size_t) 10000);
+    numVecsTile = std::min(numVecsTile, (size_t)10000);
     numVecsTile = std::max(numVecsTile, (size_t)1);
     tStart = clock();
     for (size_t i = 0; i < numIndexingVecs; i += numVecsTile) {
@@ -330,6 +332,7 @@ int main(int argc, char **argv) {
   size_t numTrainingVecs, numIndexingVecs;
   std::string fileNameTraining, fileNameIndexing, fileNameQueries,
       fileNameGroundTruth, fileNameCoarseQuantizer;
+  long safeMemMargin;
 
   d = std::stoi(argv[1]);
   coarseCodebookSize = std::stoi(argv[2]);
@@ -350,7 +353,8 @@ int main(int argc, char **argv) {
   kEnd = std::stoi(argv[17]);
   isFloat = std::stoi(argv[18]);
   numThreads = argc > 19 ? std::stoi(argv[19]) : 1;
-  fileNameCoarseQuantizer = argc > 20 ? argv[20] : "";
+  safeMemMargin = argc > 20 ? std::stol(argv[20]) : 0;
+  fileNameCoarseQuantizer = argc > 21 ? argv[21] : "";
 
   omp_set_num_threads(numThreads);
 
@@ -361,7 +365,7 @@ int main(int argc, char **argv) {
                      fileNameTraining, numTrainingVecs, fileNameIndexing,
                      numIndexingVecs, fileNameQueries, queriesOffset,
                      fileNameGroundTruth, numQueriesBegin, numQueriesEnd,
-                     nprobeBegin, nprobeEnd, kBegin, kEnd,
+                     nprobeBegin, nprobeEnd, kBegin, kEnd, safeMemMargin,
                      fileNameCoarseQuantizer);
   } else {
     demo_imipq<false>(d, coarseCodebookSize, numSubQuantizers,
@@ -369,7 +373,7 @@ int main(int argc, char **argv) {
                       fileNameIndexing, numIndexingVecs, fileNameQueries,
                       queriesOffset, fileNameGroundTruth, numQueriesBegin,
                       numQueriesEnd, nprobeBegin, nprobeEnd, kBegin, kEnd,
-                      fileNameCoarseQuantizer);
+                      safeMemMargin, fileNameCoarseQuantizer);
   }
   return 0;
 }

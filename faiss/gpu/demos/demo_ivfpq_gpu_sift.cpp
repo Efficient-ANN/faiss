@@ -117,7 +117,7 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
                 size_t queriesOffset, std::string fileNameGroundTruth,
                 int numQueriesBegin, int numQueriesEnd, int nprobeBegin,
                 int nprobeEnd, int kBegin, int kEnd, bool usePrecomputed,
-                std::string fileNameCoarseQuantizer,
+                long safeMemMargin, std::string fileNameCoarseQuantizer,
                 std::string fileNameIndex) {
 
   size_t devFree = 0;
@@ -149,7 +149,15 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
       devFree -
       faiss::gpu::utils::roundUp(fixedMemSize + 256, (size_t)maxPageSize) -
       ivfStructureMemSize;
-  res.setTempMemory(tempMemory);
+
+  if (safeMemMargin >= 0) {
+    tempMemory += safeMemMargin;
+  } else {
+    safeMemMargin *= -1;
+    tempMemory -= (size_t)safeMemMargin;
+  }
+
+  res.setTempMemory(tempMemory / 256 * 256);
   std::cout << "tempMemory: " << tempMemory << std::endl;
   // res.noTempMemory();
 
@@ -358,6 +366,7 @@ int main(int argc, char **argv) {
   size_t numTrainingVecs, numIndexingVecs;
   std::string fileNameTraining, fileNameIndexing, fileNameQueries,
       fileNameGroundTruth, fileNameCoarseQuantizer, fileNameIndex;
+  long safeMemMargin;
 
   d = std::stoi(argv[1]);
   coarseCodebookSize = std::stoi(argv[2]);
@@ -379,7 +388,8 @@ int main(int argc, char **argv) {
   isFloat = std::stoi(argv[18]);
   usePrecomputed = argc > 19 ? std::stoi(argv[19]) : 1;
   numThreads = argc > 20 ? std::stoi(argv[20]) : 1;
-  fileNameCoarseQuantizer = argc > 21 ? argv[21] : "";
+  safeMemMargin = argc > 21 ? std::stol(argv[21]) : 0;
+  fileNameCoarseQuantizer = argc > 22 ? argv[22] : "";
   fileNameIndex = "";
 
   omp_set_num_threads(numThreads);
@@ -392,14 +402,15 @@ int main(int argc, char **argv) {
                      numIndexingVecs, fileNameQueries, queriesOffset,
                      fileNameGroundTruth, numQueriesBegin, numQueriesEnd,
                      nprobeBegin, nprobeEnd, kBegin, kEnd, usePrecomputed == 1,
-                     fileNameCoarseQuantizer, fileNameIndex);
+                     safeMemMargin, fileNameCoarseQuantizer, fileNameIndex);
   } else {
-    demo_ivfpq<false>(
-        d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer,
-        fileNameTraining, numTrainingVecs, fileNameIndexing, numIndexingVecs,
-        fileNameQueries, queriesOffset, fileNameGroundTruth, numQueriesBegin,
-        numQueriesEnd, nprobeBegin, nprobeEnd, kBegin, kEnd,
-        usePrecomputed == 1, fileNameCoarseQuantizer, fileNameIndex);
+    demo_ivfpq<false>(d, coarseCodebookSize, numSubQuantizers,
+                      nbitsSubQuantizer, fileNameTraining, numTrainingVecs,
+                      fileNameIndexing, numIndexingVecs, fileNameQueries,
+                      queriesOffset, fileNameGroundTruth, numQueriesBegin,
+                      numQueriesEnd, nprobeBegin, nprobeEnd, kBegin, kEnd,
+                      usePrecomputed == 1, safeMemMargin,
+                      fileNameCoarseQuantizer, fileNameIndex);
   }
   return 0;
 }
