@@ -9,9 +9,6 @@ find_package(CUDAToolkit REQUIRED)
 add_executable(demo_imipq_cpu_sift EXCLUDE_FROM_ALL demo_imipq_cpu_sift.cpp)
 target_link_libraries(demo_imipq_cpu_sift PRIVATE faiss CUDA::cudart)
 
-add_executable(demo_imipq_gpu_sift_v2 EXCLUDE_FROM_ALL demo_imipq_gpu_sift_v2.cpp)
-target_link_libraries(demo_imipq_gpu_sift_v2 PRIVATE faiss CUDA::cudart)
-
 add_executable(demo_imipq_gpu_sift EXCLUDE_FROM_ALL demo_imipq_gpu_sift.cpp)
 target_link_libraries(demo_imipq_gpu_sift PRIVATE faiss CUDA::cudart)
 
