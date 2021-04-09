@@ -8,12 +8,15 @@
 #pragma once
 
 #include <faiss/gpu/GpuIndicesOptions.h>
+#include <faiss/gpu/GpuResources.h>
 
 namespace faiss { namespace gpu {
 
 /// set some options on how to copy to GPU
 struct GpuClonerOptions {
   GpuClonerOptions();
+
+  MemorySpace memorySpace;
 
   /// how should indices be stored on index types that support indices
   /// (anything but GpuIndexFlat*)?

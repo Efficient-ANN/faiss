@@ -208,6 +208,7 @@ Index *ToGpuCloner::clone_Index(const Index *index)
            dynamic_cast<const MultiIndexQuantizer *>(ipq->quantizer)) {
             GpuIndexIMIPQConfig config;
             config.device = device;
+            config.memorySpace = memorySpace;
             config.indicesOptions = indicesOptions;
             config.useFloat16LookupTables = useFloat16;
             config.usePrecomputedTables = usePrecomputed;
@@ -226,6 +227,7 @@ Index *ToGpuCloner::clone_Index(const Index *index)
             }
             GpuIndexIVFPQConfig config;
             config.device = device;
+            config.memorySpace = memorySpace;
             config.indicesOptions = indicesOptions;
             config.flatConfig.useFloat16 = useFloat16CoarseQuantizer;
             config.flatConfig.storeTransposed = storeTransposed;
