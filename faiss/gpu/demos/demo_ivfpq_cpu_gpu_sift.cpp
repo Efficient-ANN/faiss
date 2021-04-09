@@ -245,12 +245,19 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
     std::cout << "Total: " << devTotal << std::endl;
 
     { // copy precomputed codes from cpu
+      tStart = clock();
+
       faiss::IndexIVFPQ *ivfpqCpu = dynamic_cast<faiss::IndexIVFPQ *>(
           faiss::gpu::index_gpu_to_cpu(ivfpq));
 
       ivfpqCpu->use_precomputed_table = 1;
       ivfpqCpu->precompute_table();
       ivfpq->copyPrecomputedCodesFrom(ivfpqCpu->precomputed_table.data());
+
+      tEnd = clock();
+      tGpu = (double)(tEnd - tStart) / CLOCKS_PER_SEC;
+      std::cout << "IVFPQ copyPrecomputedCodesFrom time: " << tGpu << std::endl;
+      delete ivfpqCpu;
     }
 
     CUDA_VERIFY(cudaMemGetInfo(&devFree, &devTotal));
