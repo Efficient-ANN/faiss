@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <ctime>
 #include <faiss/Index.h>
+#include <faiss/IndexIVFPQ.h>
 #include <faiss/IndexPQ.h>
 #include <faiss/gpu/GpuCloner.h>
 #include <faiss/gpu/GpuIndexIMIPQv2.h>
@@ -111,7 +112,8 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
                 size_t queriesOffset, std::string fileNameGroundTruth,
                 int numQueriesBegin, int numQueriesEnd, int nprobeBegin,
                 int nprobeEnd, int kBegin, int kEnd, long safeMemMargin,
-                std::string fileNameCoarseQuantizer) {
+                std::string fileNameCoarseQuantizer,
+                std::string fileNameIndex) {
   size_t devFree = 0;
   size_t devTotal = 0;
   constexpr int maxPageSize = 2 * 1024 * 1024; // 2MB
@@ -160,123 +162,159 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
   config.indicesOptions = indiceOptions;
   config.usePrecomputedTables = true;
 
-  faiss::gpu::GpuIndexIMIPQv2 imipqGpu(
-      &res, d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer, config);
+  faiss::gpu::GpuIndexIMIPQv2 *imipqGpu;
   clock_t tStart, tEnd;
   double tGpu;
   int dRead;
 
-  { // train
-    bool storeCoarseQuantizer = true;
-    if (!fileNameCoarseQuantizer.empty()) {
-      FILE *f = fopen(fileNameCoarseQuantizer.c_str(), "rb");
-      if (f) {
-        fclose(f);
-        faiss::MultiIndexQuantizer *cpu_index =
-            dynamic_cast<faiss::MultiIndexQuantizer *>(
-                faiss::read_index(fileNameCoarseQuantizer.c_str()));
-        imipqGpu.quantizer->copyFrom(cpu_index);
+  bool isLoadead = false;
+
+  if (!fileNameIndex.empty()) {
+    FILE *f = fopen(fileNameIndex.c_str(), "rb");
+    if (f) {
+      fclose(f);
+
+      faiss::IndexIVFPQ *indexCpu = dynamic_cast<faiss::IndexIVFPQ *>(
+          faiss::read_index(fileNameIndex.c_str()));
+
+      faiss::gpu::GpuClonerOptions options;
+      options.memorySpace = config.memorySpace;
+      options.indicesOptions = config.indicesOptions;
+      options.usePrecomputed = config.usePrecomputedTables;
+
+      ivfpq = dynamic_cast<faiss::gpu::GpuIndexIMIPQv2 *>(
+          faiss::gpu::index_cpu_to_gpu(res, config.device, indexCpu, options));
+
+      delete indexCpu;
+
+      isLoadead = true;
+    }
+  }
+
+  if (!isLoadead) {
+    imipqGpu = new faiss::gpu::GpuIndexIMIPQv2(&res, d, coarseCodebookSize,
+                                               numSubQuantizers,
+                                               nbitsSubQuantizer, config);
+
+    { // train
+      bool storeCoarseQuantizer = true;
+      if (!fileNameCoarseQuantizer.empty()) {
+        FILE *f = fopen(fileNameCoarseQuantizer.c_str(), "rb");
+        if (f) {
+          fclose(f);
+          faiss::MultiIndexQuantizer *cpu_index =
+              dynamic_cast<faiss::MultiIndexQuantizer *>(
+                  faiss::read_index(fileNameCoarseQuantizer.c_str()));
+          imipqGpu->quantizer->copyFrom(cpu_index);
+          delete cpu_index;
+          storeCoarseQuantizer = false;
+        }
+      }
+
+      float *trainingVecs;
+      if (isVecFloat) {
+        trainingVecs = faiss::fvecs_read(fileNameTraining.c_str(),
+                                         numTrainingVecs, 0, &dRead);
+      } else {
+        trainingVecs = faiss::bvecs_read(fileNameTraining.c_str(),
+                                         numTrainingVecs, 0, &dRead);
+      }
+      assert(d == dRead);
+      tStart = clock();
+      imipqGpu->train(numTrainingVecs, trainingVecs);
+      tEnd = clock();
+      tGpu = (double)(tEnd - tStart) / CLOCKS_PER_SEC;
+      std::cout << "IMIPQ train time on GPU: " << tGpu << std::endl;
+      delete trainingVecs;
+
+      if (storeCoarseQuantizer) {
+        faiss::Index *cpu_index =
+            faiss::gpu::index_gpu_to_cpu(imipqGpu->quantizer);
+        faiss::write_index(cpu_index, fileNameCoarseQuantizer.c_str());
         delete cpu_index;
-        storeCoarseQuantizer = false;
       }
     }
 
-    float *trainingVecs;
-    if (isVecFloat) {
-      trainingVecs = faiss::fvecs_read(fileNameTraining.c_str(),
-                                       numTrainingVecs, 0, &dRead);
-    } else {
-      trainingVecs = faiss::bvecs_read(fileNameTraining.c_str(),
-                                       numTrainingVecs, 0, &dRead);
-    }
-    assert(d == dRead);
-    tStart = clock();
-    imipqGpu.train(numTrainingVecs, trainingVecs);
-    tEnd = clock();
-    tGpu = (double)(tEnd - tStart) / CLOCKS_PER_SEC;
-    std::cout << "IMIPQ train time on GPU: " << tGpu << std::endl;
-    delete trainingVecs;
+    CUDA_VERIFY(cudaMemGetInfo(&devFree, &devTotal));
+    std::cout << "-------Memory-------" << std::endl;
+    std::cout << "Free: " << devFree << std::endl;
+    std::cout << "Total: " << devTotal << std::endl;
 
-    if (storeCoarseQuantizer) {
-      faiss::Index *cpu_index =
-          faiss::gpu::index_gpu_to_cpu(imipqGpu.quantizer);
-      faiss::write_index(cpu_index, fileNameCoarseQuantizer.c_str());
-      delete cpu_index;
-    }
-  }
-
-  CUDA_VERIFY(cudaMemGetInfo(&devFree, &devTotal));
-  std::cout << "-------Memory-------" << std::endl;
-  std::cout << "Free: " << devFree << std::endl;
-  std::cout << "Total: " << devTotal << std::endl;
-
-  { // reserve
-    size_t maxAddTileSize = (size_t)8 * 1024 * 1024 * 1024;
-    size_t numVecsTile = maxAddTileSize / (d * sizeof(float));
-    numVecsTile = std::min(numVecsTile, numIndexingVecs);
-    numVecsTile = std::min(numVecsTile, (size_t)10000);
-    numVecsTile = std::max(numVecsTile, (size_t)1);
-    tStart = clock();
-    for (size_t i = 0; i < numIndexingVecs; i += numVecsTile) {
-      size_t currentNumVecsTile = std::min(numVecsTile, numIndexingVecs - i);
-      float *indexingVecs;
-      if (isVecFloat) {
-        indexingVecs = faiss::fvecs_read(fileNameIndexing.c_str(),
-                                         currentNumVecsTile, i, &dRead);
-      } else {
-        indexingVecs = faiss::bvecs_read(fileNameIndexing.c_str(),
-                                         currentNumVecsTile, i, &dRead);
+    { // reserve
+      size_t maxAddTileSize = (size_t)8 * 1024 * 1024 * 1024;
+      size_t numVecsTile = maxAddTileSize / (d * sizeof(float));
+      numVecsTile = std::min(numVecsTile, numIndexingVecs);
+      numVecsTile = std::min(numVecsTile, (size_t)10000);
+      numVecsTile = std::max(numVecsTile, (size_t)1);
+      tStart = clock();
+      for (size_t i = 0; i < numIndexingVecs; i += numVecsTile) {
+        size_t currentNumVecsTile = std::min(numVecsTile, numIndexingVecs - i);
+        float *indexingVecs;
+        if (isVecFloat) {
+          indexingVecs = faiss::fvecs_read(fileNameIndexing.c_str(),
+                                           currentNumVecsTile, i, &dRead);
+        } else {
+          indexingVecs = faiss::bvecs_read(fileNameIndexing.c_str(),
+                                           currentNumVecsTile, i, &dRead);
+        }
+        assert(d == dRead);
+        imipqGpu->updateExpectedNumAddsPerList(currentNumVecsTile,
+                                               indexingVecs);
+        faiss::gpu::CudaEvent updateEnd(
+            res.getResources()->getDefaultStreamCurrentDevice());
+        updateEnd.cpuWaitOnEvent();
+        delete indexingVecs;
       }
-      assert(d == dRead);
-      imipqGpu.updateExpectedNumAddsPerList(currentNumVecsTile, indexingVecs);
-      faiss::gpu::CudaEvent updateEnd(
+
+      imipqGpu->applyExpectedNumAddsPerList();
+      faiss::gpu::CudaEvent applyEnd(
           res.getResources()->getDefaultStreamCurrentDevice());
-      updateEnd.cpuWaitOnEvent();
-      delete indexingVecs;
+      applyEnd.cpuWaitOnEvent();
+      tEnd = clock();
+      tGpu = (double)(tEnd - tStart) / CLOCKS_PER_SEC;
+      std::cout << "IMIPQ reserve time on GPU: " << tGpu << std::endl;
+      imipqGpu->resetExpectedNumAddsPerList();
     }
 
-    imipqGpu.applyExpectedNumAddsPerList();
-    faiss::gpu::CudaEvent applyEnd(
-        res.getResources()->getDefaultStreamCurrentDevice());
-    applyEnd.cpuWaitOnEvent();
-    tEnd = clock();
-    tGpu = (double)(tEnd - tStart) / CLOCKS_PER_SEC;
-    std::cout << "IMIPQ reserve time on GPU: " << tGpu << std::endl;
-    imipqGpu.resetExpectedNumAddsPerList();
-  }
+    CUDA_VERIFY(cudaMemGetInfo(&devFree, &devTotal));
+    std::cout << "-------Memory-------" << std::endl;
+    std::cout << "Free: " << devFree << std::endl;
+    std::cout << "Total: " << devTotal << std::endl;
 
-  CUDA_VERIFY(cudaMemGetInfo(&devFree, &devTotal));
-  std::cout << "-------Memory-------" << std::endl;
-  std::cout << "Free: " << devFree << std::endl;
-  std::cout << "Total: " << devTotal << std::endl;
-
-  { // add
-    size_t maxAddTileSize = (size_t)8 * 1024 * 1024 * 1024;
-    size_t numVecsTile = maxAddTileSize / (d * sizeof(float));
-    numVecsTile = std::min(numVecsTile, numIndexingVecs);
-    numVecsTile = std::min(numVecsTile, (size_t)10000);
-    numVecsTile = std::max(numVecsTile, (size_t)1);
-    tStart = clock();
-    for (size_t i = 0; i < numIndexingVecs; i += numVecsTile) {
-      size_t currentNumVecsTile = std::min(numVecsTile, numIndexingVecs - i);
-      float *indexingVecs;
-      if (isVecFloat) {
-        indexingVecs = faiss::fvecs_read(fileNameIndexing.c_str(),
-                                         currentNumVecsTile, i, &dRead);
-      } else {
-        indexingVecs = faiss::bvecs_read(fileNameIndexing.c_str(),
-                                         currentNumVecsTile, i, &dRead);
+    { // add
+      size_t maxAddTileSize = (size_t)8 * 1024 * 1024 * 1024;
+      size_t numVecsTile = maxAddTileSize / (d * sizeof(float));
+      numVecsTile = std::min(numVecsTile, numIndexingVecs);
+      numVecsTile = std::min(numVecsTile, (size_t)10000);
+      numVecsTile = std::max(numVecsTile, (size_t)1);
+      tStart = clock();
+      for (size_t i = 0; i < numIndexingVecs; i += numVecsTile) {
+        size_t currentNumVecsTile = std::min(numVecsTile, numIndexingVecs - i);
+        float *indexingVecs;
+        if (isVecFloat) {
+          indexingVecs = faiss::fvecs_read(fileNameIndexing.c_str(),
+                                           currentNumVecsTile, i, &dRead);
+        } else {
+          indexingVecs = faiss::bvecs_read(fileNameIndexing.c_str(),
+                                           currentNumVecsTile, i, &dRead);
+        }
+        assert(d == dRead);
+        imipqGpu->add(currentNumVecsTile, indexingVecs);
+        delete indexingVecs;
       }
-      assert(d == dRead);
-      imipqGpu.add(currentNumVecsTile, indexingVecs);
-      delete indexingVecs;
+      tEnd = clock();
+      tGpu = (double)(tEnd - tStart) / CLOCKS_PER_SEC;
+      std::cout << "IMIPQ add time on GPU: " << tGpu << std::endl;
     }
-    tEnd = clock();
-    tGpu = (double)(tEnd - tStart) / CLOCKS_PER_SEC;
-    std::cout << "IMIPQ add time on GPU: " << tGpu << std::endl;
+
+    if (!fileNameIndex.empty()) {
+      faiss::Index *indexCpu = faiss::gpu::index_gpu_to_cpu(ivfpq);
+      faiss::write_index(indexCpu, fileNameIndex.c_str());
+      delete indexCpu;
+    }
   }
 
-  std::cout << "maxListLength: " << imipqGpu.getMaxListLength() << std::endl;
+  std::cout << "maxListLength: " << imipqGpu->getMaxListLength() << std::endl;
 
   std::vector<int> numQueriesList = {1, 1000, 8192, 10000};
   std::vector<int> nprobeList = {1,  2,   4,   8,   16,   32,
@@ -311,8 +349,8 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
          j < nprobeEnd && j < nprobeList.size(); j++) {
       int nprobe = nprobeList[j];
       std::cout << "nprobe: " << nprobe << "---------" << std::endl;
-      imipqGpu.setNumProbes(nprobe);
-      search(&res, &imipqGpu, queries, groundTruth, numQueries, kBegin, kEnd,
+      imipqGpu->setNumProbes(nprobe);
+      search(&res, imipqGpu, queries, groundTruth, numQueries, kBegin, kEnd,
              dRead);
     }
   }
@@ -331,7 +369,7 @@ int main(int argc, char **argv) {
       isFloat, numThreads;
   size_t numTrainingVecs, numIndexingVecs;
   std::string fileNameTraining, fileNameIndexing, fileNameQueries,
-      fileNameGroundTruth, fileNameCoarseQuantizer;
+      fileNameGroundTruth, fileNameCoarseQuantizer, fileNameIndex;
   long safeMemMargin;
 
   d = std::stoi(argv[1]);
@@ -355,6 +393,7 @@ int main(int argc, char **argv) {
   numThreads = argc > 19 ? std::stoi(argv[19]) : 1;
   safeMemMargin = argc > 20 ? std::stol(argv[20]) : 0;
   fileNameCoarseQuantizer = argc > 21 ? argv[21] : "";
+  fileNameIndex = argc > 22 ? argv[22] : "";
 
   omp_set_num_threads(numThreads);
 
@@ -366,14 +405,14 @@ int main(int argc, char **argv) {
                      numIndexingVecs, fileNameQueries, queriesOffset,
                      fileNameGroundTruth, numQueriesBegin, numQueriesEnd,
                      nprobeBegin, nprobeEnd, kBegin, kEnd, safeMemMargin,
-                     fileNameCoarseQuantizer);
+                     fileNameCoarseQuantizer, fileNameIndex);
   } else {
     demo_imipq<false>(d, coarseCodebookSize, numSubQuantizers,
                       nbitsSubQuantizer, fileNameTraining, numTrainingVecs,
                       fileNameIndexing, numIndexingVecs, fileNameQueries,
                       queriesOffset, fileNameGroundTruth, numQueriesBegin,
                       numQueriesEnd, nprobeBegin, nprobeEnd, kBegin, kEnd,
-                      safeMemMargin, fileNameCoarseQuantizer);
+                      safeMemMargin, fileNameCoarseQuantizer, fileNameIndex);
   }
   return 0;
 }
