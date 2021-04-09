@@ -22,6 +22,7 @@
 #include <faiss/IndexPreTransform.h>
 #include <faiss/MetaIndexes.h>
 #include <faiss/gpu/GpuIndexFlat.h>
+#include <faiss/gpu/GpuIndexIMIPQv2.h>
 #include <faiss/gpu/GpuIndexIVFFlat.h>
 #include <faiss/gpu/GpuIndexIVFPQ.h>
 #include <faiss/gpu/GpuIndexIVFScalarQuantizer.h>
@@ -66,9 +67,9 @@ Index *ToCPUCloner::clone_Index(const Index *index)
         IndexFlat *res = new IndexFlat();
         ifl->copyTo(res);
         return res;
-    } if(auto ifl = dynamic_cast<const GpuMultiIndex2 *>(index)) {
+    } if(auto imi = dynamic_cast<const GpuMultiIndex2 *>(index)) {
         MultiIndexQuantizer *res = new MultiIndexQuantizer();
-        ifl->copyTo(res);
+        imi->copyTo(res);
         return res;
     } else if(auto ifl = dynamic_cast<const GpuIndexIVFFlat *>(index)) {
         IndexIVFFlat *res = new IndexIVFFlat();
@@ -80,6 +81,10 @@ Index *ToCPUCloner::clone_Index(const Index *index)
         ifl->copyTo(res);
         return res;
     } else if(auto ipq = dynamic_cast<const GpuIndexIVFPQ *>(index)) {
+        IndexIVFPQ *res = new IndexIVFPQ();
+        ipq->copyTo(res);
+        return res;
+    } else if(auto ipq = dynamic_cast<const GpuIndexIMIPQv2 *>(index)) {
         IndexIVFPQ *res = new IndexIVFPQ();
         ipq->copyTo(res);
         return res;
@@ -134,10 +139,10 @@ Index *ToGpuCloner::clone_Index(const Index *index)
         config.useFloat16 = useFloat16;
         config.storeTransposed = storeTransposed;
         return new GpuIndexFlat(provider, ifl, config);
-    } if(auto ifl = dynamic_cast<const MultiIndexQuantizer *>(index)) {
+    } if(auto imi = dynamic_cast<const MultiIndexQuantizer *>(index)) {
         GpuMultiIndex2Config config;
         config.device = device;
-        return new GpuMultiIndex2(provider, ifl, config);
+        return new GpuMultiIndex2(provider, imi, config);
     } else if (
         dynamic_cast<const IndexScalarQuantizer *>(index) &&
         static_cast<const IndexScalarQuantizer *>(index)->sq.qtype ==
@@ -199,28 +204,43 @@ Index *ToGpuCloner::clone_Index(const Index *index)
         res->copyFrom(ifl);
         return res;
     } else if(auto ipq = dynamic_cast<const faiss::IndexIVFPQ *>(index)) {
-        if(verbose) {
-            printf("  IndexIVFPQ size %ld -> GpuIndexIVFPQ "
-                   "indicesOptions=%d "
-                   "usePrecomputed=%d useFloat16=%d reserveVecs=%ld\n",
-                   ipq->ntotal, indicesOptions, usePrecomputed,
-                   useFloat16, reserveVecs);
+        if(auto imi = 
+           dynamic_cast<const MultiIndexQuantizer *>(ipq->quantizer)) {
+            GpuIndexIMIPQConfig config;
+            config.device = device;
+            config.indicesOptions = indicesOptions;
+            config.useFloat16LookupTables = useFloat16;
+            config.usePrecomputedTables = usePrecomputed;
+            config.precomputeCodesOnCpu = precomputeCodesOnCpu;
+
+            GpuIndexIMIPQv2 *res = new GpuIndexIMIPQv2(provider, ipq, config);
+            return res;
         }
-        GpuIndexIVFPQConfig config;
-        config.device = device;
-        config.indicesOptions = indicesOptions;
-        config.flatConfig.useFloat16 = useFloat16CoarseQuantizer;
-        config.flatConfig.storeTransposed = storeTransposed;
-        config.useFloat16LookupTables = useFloat16;
-        config.usePrecomputedTables = usePrecomputed;
+        else{
+            if(verbose) {
+                printf("  IndexIVFPQ size %ld -> GpuIndexIVFPQ "
+                    "indicesOptions=%d "
+                    "usePrecomputed=%d useFloat16=%d reserveVecs=%ld\n",
+                    ipq->ntotal, indicesOptions, usePrecomputed,
+                    useFloat16, reserveVecs);
+            }
+            GpuIndexIVFPQConfig config;
+            config.device = device;
+            config.indicesOptions = indicesOptions;
+            config.flatConfig.useFloat16 = useFloat16CoarseQuantizer;
+            config.flatConfig.storeTransposed = storeTransposed;
+            config.useFloat16LookupTables = useFloat16;
+            config.usePrecomputedTables = usePrecomputed;
+            config.precomputeCodesOnCpu = precomputeCodesOnCpu;
 
-        GpuIndexIVFPQ *res = new GpuIndexIVFPQ(provider, ipq, config);
+            GpuIndexIVFPQ *res = new GpuIndexIVFPQ(provider, ipq, config);
 
-        if(reserveVecs > 0 && ipq->ntotal == 0) {
-            res->reserveMemory(reserveVecs);
+            if(reserveVecs > 0 && ipq->ntotal == 0) {
+                res->reserveMemory(reserveVecs);
+            }
+
+            return res;
         }
-
-        return res;
     } else {
         // default: use CPU cloner
         return Cloner::clone_Index(index);

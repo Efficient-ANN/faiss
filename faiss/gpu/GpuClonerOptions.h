@@ -29,6 +29,8 @@ struct GpuClonerOptions {
   /// use precomputed tables?
   bool usePrecomputed;
 
+  bool precomputeCodesOnCpu;
+
   /// reserve vectors in the invfiles?
   long reserveVecs;
 

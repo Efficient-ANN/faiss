@@ -14,6 +14,7 @@ GpuClonerOptions::GpuClonerOptions()
       useFloat16CoarseQuantizer(false),
       useFloat16(false),
       usePrecomputed(false),
+      precomputeCodesOnCpu(false),
       reserveVecs(0),
       storeTransposed(false),
       verbose(false) {

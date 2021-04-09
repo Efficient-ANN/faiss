@@ -13,9 +13,30 @@
 #include <faiss/gpu/utils/DeviceUtils.h>
 #include <faiss/gpu/utils/StaticUtils.h>
 #include <faiss/utils/utils.h>
+#include <string>
 
 namespace faiss {
 namespace gpu {
+
+GpuIndexIMIPQv2::GpuIndexIMIPQv2(GpuResourcesProvider *provider,
+                                 const faiss::IndexIVFPQ *index,
+                                 GpuIndexIMIPQConfig config)
+    : GpuIndexIMI(provider, index->d, index->nlist, config), pq(index->pq),
+      imipqConfig_(config), usePrecomputedTables_(config.usePrecomputedTables),
+      subQuantizers_(0), bitsPerCode_(0), reserveMemoryVecs_(0),
+      expectedNumAddsPerList(nullptr), index_(nullptr) {
+  copyFrom(index);
+}
+
+GpuIndexIMIPQv2::GpuIndexIMIPQv2(std::shared_ptr<GpuResources> resources,
+                                 const faiss::IndexIVFPQ *index,
+                                 GpuIndexIMIPQConfig config)
+    : GpuIndexIMI(resources, index->d, index->nlist, config), pq(index->pq),
+      imipqConfig_(config), usePrecomputedTables_(config.usePrecomputedTables),
+      subQuantizers_(0), bitsPerCode_(0), reserveMemoryVecs_(0),
+      expectedNumAddsPerList(nullptr), index_(nullptr) {
+  copyFrom(index);
+}
 
 GpuIndexIMIPQv2::GpuIndexIMIPQv2(GpuResourcesProvider *provider, int dims,
                                  int coarseCodebookSize, int subQuantizers,
@@ -114,21 +135,33 @@ void GpuIndexIMIPQv2::setPrecomputedCodes(bool enable) {
   verifySettings_();
 }
 
-void GpuIndexIMIPQv2::copyPrecomputedCodesFrom(float *precomputedCodes) {
+void GpuIndexIMIPQv2::copyPrecomputedCodesFrom(const float *precomputedCodes) {
   FAISS_ASSERT(index_);
   DeviceScope scope(config_.device);
 
+  size_t precomputedCodesVecLength = (size_t)quantizer->getCodebookSize() *
+                                     subQuantizers_ *
+                                     index_->getNumSubQuantizerCodes();
+  std::vector<float> precomputedCodesVec(precomputedCodesVecLength);
+
+  memcpy(precomputedCodesVec.data(), precomputedCodes,
+         precomputedCodesVecLength * sizeof(float));
+
+  auto stream = resources_->getDefaultStream(config_.device);
+
   auto precomputedCodesDevice = toDeviceNonTemporary<float, 3>(
-      resources_.get(), imipqConfig_.device, precomputedCodes,
-      AllocType::QuantizerPrecomputedCodes,
-      resources_->getDefaultStream(config_.device),
+      resources_.get(), imipqConfig_.device, precomputedCodesVec.data(),
+      AllocType::QuantizerPrecomputedCodes, stream,
       {quantizer->getCodebookSize(), subQuantizers_,
        index_->getNumSubQuantizerCodes()});
+
+  CudaEvent copyEnd(stream);
+  copyEnd.cpuWaitOnEvent();
 
   index_->movePrecomputedCodesFrom(precomputedCodesDevice);
 }
 
-void GpuIndexIMIPQv2::copyFrom(faiss::IndexIVFPQ *index) {
+void GpuIndexIMIPQv2::copyFrom(const faiss::IndexIVFPQ *index) {
   DeviceScope scope(config_.device);
 
   GpuIndexIMI::copyFrom(index);
@@ -169,7 +202,7 @@ void GpuIndexIMIPQv2::copyFrom(faiss::IndexIVFPQ *index) {
 
   if (usePrecomputedTables_ && imipqConfig_.precomputeCodesOnCpu) {
     FAISS_ASSERT(index->precomputed_table.size() ==
-                 quantizer->getCodebookSize() * subQuantizers_ *
+                 (size_t)quantizer->getCodebookSize() * subQuantizers_ *
                      index_->getNumSubQuantizerCodes());
 
     copyPrecomputedCodesFrom(index->precomputed_table.data());
@@ -275,8 +308,8 @@ void GpuIndexIMIPQv2::trainResidualQuantizer_(Index::idx_t n, const float *x) {
            subQuantizers_, getCentroidsPerSubQuantizer(), n, this->d);
   }
 
-  // For PQ training purposes, accelerate it by using a GPU clustering index if
-  // a clustering index has not already been assigned
+  // For PQ training purposes, accelerate it by using a GPU clustering index
+  // if a clustering index has not already been assigned
   if (!pq.assign_index) {
     try {
       GpuIndexFlatConfig config;
@@ -318,8 +351,8 @@ void GpuIndexIMIPQv2::train(Index::idx_t n, const float *x) {
   FAISS_ASSERT(!index_);
 
   // FIXME: GPUize more of this
-  // First, make sure that the data is resident on the CPU, if it is not on the
-  // CPU, as we depend upon parts of the CPU code
+  // First, make sure that the data is resident on the CPU, if it is not on
+  // the CPU, as we depend upon parts of the CPU code
   auto hostData =
       toHost<float, 2>((float *)x, resources_->getDefaultStream(config_.device),
                        {(int)n, (int)this->d});
@@ -347,8 +380,8 @@ void GpuIndexIMIPQv2::addImpl_(int n, const float *x,
   // Not all vectors may be able to be added (some may contain NaNs etc)
   index_->addVectors(data, labels);
 
-  // but keep the ntotal based on the total number of vectors that we attempted
-  // to add
+  // but keep the ntotal based on the total number of vectors that we
+  // attempted to add
   ntotal += n;
 }
 

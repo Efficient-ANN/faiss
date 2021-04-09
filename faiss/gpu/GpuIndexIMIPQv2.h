@@ -8,6 +8,7 @@
 #pragma once
 
 #include <faiss/Index.h>
+#include <faiss/IndexIVFPQ.h>
 #include <faiss/gpu/GpuIndexIMI.h>
 #include <faiss/gpu/GpuIndexIMIPQ.h>
 #include <faiss/impl/ProductQuantizer.h>
@@ -15,7 +16,9 @@
 #include <unordered_map>
 #include <vector>
 
-namespace faiss { struct IndexIVFPQ; }
+namespace faiss {
+struct IndexIVFPQ;
+}
 
 namespace faiss {
 namespace gpu {
@@ -24,6 +27,16 @@ class IMIPQv2;
 
 class GpuIndexIMIPQv2 : public GpuIndexIMI {
 public:
+  /// Construct an empty index
+  GpuIndexIMIPQv2(GpuResourcesProvider *provider,
+                  const faiss::IndexIVFPQ *index,
+                  GpuIndexIMIPQConfig config = GpuIndexIMIPQConfig());
+
+  /// Construct an empty index
+  GpuIndexIMIPQv2(std::shared_ptr<GpuResources> resources,
+                  const faiss::IndexIVFPQ *index,
+                  GpuIndexIMIPQConfig config = GpuIndexIMIPQConfig());
+
   /// Construct an empty index
   GpuIndexIMIPQv2(GpuResourcesProvider *provider, int dims,
                   int coarseCodebookSize, int subQuantizers, int bitsPerCode,
@@ -54,15 +67,15 @@ public:
 
   void resetExpectedNumAddsPerList();
 
-  void copyPrecomputedCodesFrom(float *precomputedCodes);
+  void copyPrecomputedCodesFrom(const float *precomputedCodes);
 
   /// Initialize ourselves from the given CPU index; will overwrite
   /// all data in ourselves
-  void copyFrom(faiss::IndexIVFPQ* index);
+  void copyFrom(const faiss::IndexIVFPQ *index);
 
   /// Copy ourselves to the given CPU index; will overwrite all data
   /// in the index instance
-  void copyTo(faiss::IndexIVFPQ* index) const;
+  void copyTo(faiss::IndexIVFPQ *index) const;
 
   /// Enable or disable pre-computed codes
   void setPrecomputedCodes(bool enable);
