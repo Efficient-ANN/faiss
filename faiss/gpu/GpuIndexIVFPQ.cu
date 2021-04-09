@@ -15,8 +15,8 @@
 #include <faiss/gpu/impl/IVFPQ.cuh>
 #include <faiss/gpu/utils/CopyUtils.cuh>
 #include <faiss/gpu/utils/DeviceUtils.h>
-
 #include <limits>
+#include <string>
 
 namespace faiss { namespace gpu {
 
@@ -125,16 +125,27 @@ void GpuIndexIVFPQ::resetExpectedNumAddsPerList() {
   expectedNumAddsPerList.reset(nullptr);
 }
 
-void GpuIndexIVFPQ::copyPrecomputedCodesFrom(float *precomputedCodes){
+void GpuIndexIVFPQ::copyPrecomputedCodesFrom(const float *precomputedCodes){
   FAISS_ASSERT(index_);
   DeviceScope scope(config_.device);
 
+  size_t precomputedCodesVecLength = (size_t)quantizer->ntotal * subQuantizers_ 
+                                      * index_->getNumSubQuantizerCodes();
+  std::vector<float> precomputedCodesVec(precomputedCodesVecLength);
+
+  memcpy(precomputedCodesVec.data(), precomputedCodes,
+         precomputedCodesVecLength * sizeof(float));
+
+  auto stream = resources_->getDefaultStream(config_.device);
+
   auto precomputedCodesDevice = toDeviceNonTemporary<float, 3>(
-      resources_.get(), ivfpqConfig_.device, precomputedCodes,
-      AllocType::QuantizerPrecomputedCodes,
-      resources_->getDefaultStream(config_.device),
-      {(int)quantizer->ntotal, subQuantizers_,
-        index_->getNumSubQuantizerCodes()});
+      resources_.get(), ivfpqConfig_.device, precomputedCodesVec.data(),
+      AllocType::QuantizerPrecomputedCodes, stream,
+      {(int) quantizer->ntotal, subQuantizers_,
+       index_->getNumSubQuantizerCodes()});
+
+  CudaEvent copyEnd(stream);
+  copyEnd.cpuWaitOnEvent();
 
   index_->movePrecomputedCodesFrom(precomputedCodesDevice);
 }
@@ -187,6 +198,14 @@ GpuIndexIVFPQ::copyFrom(const faiss::IndexIVFPQ* index) {
                          config_.memorySpace));
   // Doesn't make sense to reserve memory here
   index_->setPrecomputedCodes(usePrecomputedTables_);
+
+  if (usePrecomputedTables_ && ivfpqConfig_.precomputeCodesOnCpu) {
+    FAISS_ASSERT(index->precomputed_table.size() ==
+                 (size_t) quantizer->ntotal * subQuantizers_ *
+                     index_->getNumSubQuantizerCodes());
+
+    copyPrecomputedCodesFrom(index->precomputed_table.data());
+  }
 
   // Copy all of the IVF data
   index_->copyInvertedListsFrom(index->invlists);

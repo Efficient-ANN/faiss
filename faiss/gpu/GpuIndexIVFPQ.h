@@ -93,7 +93,7 @@ class GpuIndexIVFPQ : public GpuIndexIVF {
 
   void resetExpectedNumAddsPerList();
 
-  void copyPrecomputedCodesFrom(float *precomputedCodes);
+  void copyPrecomputedCodesFrom(const float *precomputedCodes);
 
   /// Reserve space on the GPU for the inverted lists for `num`
   /// vectors, assumed equally distributed among
