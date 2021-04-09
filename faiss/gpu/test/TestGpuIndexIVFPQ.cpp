@@ -641,6 +641,52 @@ TEST(TestGpuIndexIVFPQ, UnifiedMemory) {
                              0.015f);
 }
 
+TEST(TestGpuIndexIMIPQ, copyPrecomputedCodesFrom) {
+  std::vector<int> dList = {2, 4};
+  std::vector<int> nlistList = {1, 4, 6};
+  int numSubQuantizers = 2;
+  int bitsPerCode = 8;
+
+  for (int i = 0; i < dList.size(); i++) {
+    for (int j = 0; j < nlistList.size(); j++) {
+      int d = dList[i];
+      int nlist = nlistList[j];
+      int numTrainingVecs = nlist * 39;
+
+      faiss::IndexFlatL2 flatIndex(d);
+      faiss::IndexIVFPQ ivfpqCpu(&flatIndex, d, nlist, numSubQuantizers,
+                                bitsPerCode);
+
+      {
+        std::vector<float> vecs = faiss::gpu::randVecs(numTrainingVecs, d);
+        ivfpqCpu.train(numTrainingVecs, vecs.data());
+      }
+
+      ivfpqCpu.use_precomputed_table = 1;
+      ivfpqCpu.precompute_table();
+
+      faiss::gpu::StandardGpuResources res;
+      faiss::gpu::GpuIndexIVFPQConfig config;
+
+      config.usePrecomputedTables = true;
+      config.precomputeCodesOnCpu = true;
+
+      faiss::gpu::GpuIndexIVFPQ ivfpqGpu(
+          &res, d, nlist, numSubQuantizers, bitsPerCode, faiss::MetricType::METRIC_L2, config);
+
+      ivfpqGpu.copyPrecomputedCodesFrom(ivfpqCpu.precomputed_table.data());
+
+      {
+        std::vector<float> term2Gpu = ivfpqGpu.getPrecomputedCodesVec();
+
+        for (size_t i = 0; i < term2Gpu.size(); i++) {
+          EXPECT_EQ(term2Gpu[i], ivfpqCpu.precomputed_table[i]);
+        }
+      }
+    }
+  }
+}
+
 int main(int argc, char** argv) {
   testing::InitGoogleTest(&argc, argv);
 

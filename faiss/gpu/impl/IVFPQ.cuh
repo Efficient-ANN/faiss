@@ -28,6 +28,7 @@ class IVFPQ : public IVFBase {
         bool useFloat16LookupTables,
         bool useMMCodeDistance,
         bool interleavedLayout,
+        bool precomputeCodesOnCpu,
         float* pqCentroidData,
         IndicesOptions indicesOptions,
         MemorySpace space);
@@ -42,6 +43,8 @@ class IVFPQ : public IVFBase {
                                     bool interleavedLayout,
                                     IndicesOptions options);
 
+  void movePrecomputedCodesFrom(DeviceTensor<float, 3, true> &precomputedCode);
+
   /// Enable or disable pre-computed codes
   void setPrecomputedCodes(bool enable);
 
@@ -53,9 +56,15 @@ class IVFPQ : public IVFBase {
              Tensor<float, 2, true>& outDistances,
              Tensor<Index::idx_t, 2, true>& outIndices);
 
+  int getNumSubQuantizerCodes();
+
   /// Returns our set of sub-quantizers of the form
   /// (sub q)(code id)(sub dim)
   Tensor<float, 3, true> getPQCentroids();
+
+  /// Returns our set of float precomputed codes of the form
+  /// (centroid id)(sub q)(code id)
+  Tensor<float, 3, true> getPrecomputedCodesVecFloat32();
 
  protected:
   static size_t calcVectorsEncodingMemorySpaceSize(int numVecs,
@@ -163,6 +172,8 @@ class IVFPQ : public IVFBase {
   /// Are precomputed codes enabled? (additional factoring and
   /// precomputation of the residual distance, to reduce query-time work)
   bool precomputedCodes_;
+
+  bool precomputeCodesOnCpu_;
 
   /// Precomputed term 2 in float form
   /// (centroid id)(sub q)(code id)

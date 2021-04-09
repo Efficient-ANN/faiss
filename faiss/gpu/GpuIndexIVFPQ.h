@@ -26,7 +26,8 @@ struct GpuIndexIVFPQConfig : public GpuIndexIVFConfig {
       : useFloat16LookupTables(false),
         usePrecomputedTables(false),
         interleavedLayout(false),
-        useMMCodeDistance(false) {
+        useMMCodeDistance(false),
+        precomputeCodesOnCpu(false) {
   }
 
   /// Whether or not float16 residual distance tables are used in the
@@ -51,6 +52,7 @@ struct GpuIndexIVFPQConfig : public GpuIndexIVFConfig {
   /// of dimensions per sub-quantizer that is not natively specialized (an odd
   /// number like 7 or so).
   bool useMMCodeDistance;
+  bool precomputeCodesOnCpu;
 };
 
 /// IVFPQ index for the GPU
@@ -90,6 +92,8 @@ class GpuIndexIVFPQ : public GpuIndexIVF {
   void applyExpectedNumAddsPerList();
 
   void resetExpectedNumAddsPerList();
+
+  void copyPrecomputedCodesFrom(float *precomputedCodes);
 
   /// Reserve space on the GPU for the inverted lists for `num`
   /// vectors, assumed equally distributed among
@@ -148,6 +152,9 @@ class GpuIndexIVFPQ : public GpuIndexIVF {
   /// Return the vector indices contained in a particular inverted list, for
   /// debugging purposes.
   std::vector<Index::idx_t> getListIndices(int listId) const override;
+
+  // returns precomputedCodesVec (centroid id)(sub q)(code id)
+  std::vector<float> getPrecomputedCodesVec() const;
 
  public:
   /// Like the CPU version, we expose a publically-visible ProductQuantizer for

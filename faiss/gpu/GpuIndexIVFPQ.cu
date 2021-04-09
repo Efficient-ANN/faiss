@@ -125,6 +125,20 @@ void GpuIndexIVFPQ::resetExpectedNumAddsPerList() {
   expectedNumAddsPerList.reset(nullptr);
 }
 
+void GpuIndexIVFPQ::copyPrecomputedCodesFrom(float *precomputedCodes){
+  FAISS_ASSERT(index_);
+  DeviceScope scope(config_.device);
+
+  auto precomputedCodesDevice = toDeviceNonTemporary<float, 3>(
+      resources_.get(), ivfpqConfig_.device, precomputedCodes,
+      AllocType::QuantizerPrecomputedCodes,
+      resources_->getDefaultStream(config_.device),
+      {(int)quantizer->ntotal, subQuantizers_,
+        index_->getNumSubQuantizerCodes()});
+
+  index_->movePrecomputedCodesFrom(precomputedCodesDevice);
+}
+
 void
 GpuIndexIVFPQ::copyFrom(const faiss::IndexIVFPQ* index) {
   DeviceScope scope(config_.device);
@@ -167,6 +181,7 @@ GpuIndexIVFPQ::copyFrom(const faiss::IndexIVFPQ* index) {
                          ivfpqConfig_.useFloat16LookupTables,
                          ivfpqConfig_.useMMCodeDistance,
                          ivfpqConfig_.interleavedLayout,
+                         ivfpqConfig_.precomputeCodesOnCpu,
                          (float*) index->pq.centroids.data(),
                          ivfpqConfig_.indicesOptions,
                          config_.memorySpace));
@@ -351,6 +366,7 @@ GpuIndexIVFPQ::trainResidualQuantizer_(Index::idx_t n, const float* x) {
                          ivfpqConfig_.useFloat16LookupTables,
                          ivfpqConfig_.useMMCodeDistance,
                          ivfpqConfig_.interleavedLayout,
+                         ivfpqConfig_.precomputeCodesOnCpu,
                          pq.centroids.data(),
                          ivfpqConfig_.indicesOptions,
                          config_.memorySpace));
@@ -454,6 +470,15 @@ GpuIndexIVFPQ::getListIndices(int listId) const {
   DeviceScope scope(config_.device);
 
   return index_->getListIndices(listId);
+}
+
+std::vector<float> GpuIndexIVFPQ::getPrecomputedCodesVec() const {
+  DeviceScope scope(config_.device);
+  auto precomputedCodesDevice = index_->getPrecomputedCodesVecFloat32();
+  std::vector<float> precomputedCodes(precomputedCodesDevice.numElements());
+  fromDevice<float, 3>(precomputedCodesDevice, precomputedCodes.data(),
+                       resources_->getDefaultStream(config_.device));
+  return precomputedCodes;
 }
 
 void

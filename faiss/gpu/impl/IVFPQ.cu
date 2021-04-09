@@ -42,6 +42,7 @@ IVFPQ::IVFPQ(GpuResources* resources,
              bool useFloat16LookupTables,
              bool useMMCodeDistance,
              bool interleavedLayout,
+             bool precomputeCodesOnCpu,
              float* pqCentroidData,
              IndicesOptions indicesOptions,
              MemorySpace space) :
@@ -58,7 +59,8 @@ IVFPQ::IVFPQ(GpuResources* resources,
     dimPerSubQuantizer_(dim_ / numSubQuantizers),
     useFloat16LookupTables_(useFloat16LookupTables),
     useMMCodeDistance_(useMMCodeDistance),
-    precomputedCodes_(false) {
+    precomputedCodes_(false),
+    precomputeCodesOnCpu_(precomputeCodesOnCpu) {
   FAISS_ASSERT(pqCentroidData);
 
   FAISS_ASSERT(bitsPerSubQuantizer_ <= 8);
@@ -139,6 +141,34 @@ IVFPQ::isSupportedPQCodeLength(int size) {
   }
 }
 
+void IVFPQ::movePrecomputedCodesFrom(
+    DeviceTensor<float, 3, true> &precomputedCode) {
+  FAISS_ASSERT(precomputedCode.getSize(0) == quantizer_->getSize());
+  FAISS_ASSERT(precomputedCode.getSize(1) == numSubQuantizers_);
+  FAISS_ASSERT(precomputedCode.getSize(2) == numSubQuantizerCodes_);
+
+  precomputedCodes_ = true;
+
+  if (precomputedCode_.numElements() > 0) {
+    precomputedCode_ = DeviceTensor<float, 3, true>();
+
+  } else if (precomputedCodeHalf_.numElements() > 0) {
+    precomputedCodeHalf_ = DeviceTensor<half, 3, true>();
+  }
+
+  auto stream = resources_->getDefaultStreamCurrentDevice();
+  if (useFloat16LookupTables_) {
+    precomputedCodeHalf_ = DeviceTensor<half, 3, true>(
+        resources_, makeDevAlloc(AllocType::QuantizerPrecomputedCodes, stream),
+        {quantizer_->getSize(), numSubQuantizers_,
+         numSubQuantizerCodes_});
+
+    convertTensor(stream, precomputedCode, precomputedCodeHalf_);
+  } else {
+    precomputedCode_ = std::move(precomputedCode);
+  }
+}
+
 void
 IVFPQ::setPrecomputedCodes(bool enable) {
   if (enable && metric_ == MetricType::METRIC_INNER_PRODUCT) {
@@ -147,7 +177,7 @@ IVFPQ::setPrecomputedCodes(bool enable) {
     return;
   }
 
-  if (precomputedCodes_ != enable) {
+  if (precomputedCodes_ != enable && !precomputeCodesOnCpu_) {
     precomputedCodes_ = enable;
 
     if (precomputedCodes_) {
@@ -601,9 +631,15 @@ IVFPQ::query(Tensor<float, 2, true>& queries,
   }
 }
 
+int IVFPQ::getNumSubQuantizerCodes() { return numSubQuantizerCodes_; }
+
 Tensor<float, 3, true>
 IVFPQ::getPQCentroids() {
   return pqCentroidsMiddleCode_;
+}
+
+Tensor<float, 3, true> IVFPQ::getPrecomputedCodesVecFloat32() {
+  return precomputedCode_;
 }
 
 void

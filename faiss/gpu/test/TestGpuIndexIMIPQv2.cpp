@@ -779,6 +779,7 @@ void testCopyPrecomputedCodesFrom(int d, int nbitsCoarseQuantizer,
   faiss::gpu::GpuIndexIMIPQConfig config;
 
   config.usePrecomputedTables = true;
+  config.precomputeCodesOnCpu = true;
 
   faiss::gpu::GpuIndexIMIPQv2 imipqGpu(
       &res, d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer, config);
