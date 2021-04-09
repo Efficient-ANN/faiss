@@ -5,8 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <algorithm>
-#include <cstring>
+#include <faiss/IndexIVFPQ.h>
 #include <faiss/gpu/GpuIndexFlat.h>
 #include <faiss/gpu/GpuIndexIMIPQv2.h>
 #include <faiss/gpu/impl/IMIPQv2.cuh>
@@ -14,7 +13,6 @@
 #include <faiss/gpu/utils/DeviceUtils.h>
 #include <faiss/gpu/utils/StaticUtils.h>
 #include <faiss/utils/utils.h>
-#include <utility>
 
 namespace faiss {
 namespace gpu {
@@ -116,6 +114,117 @@ void GpuIndexIMIPQv2::setPrecomputedCodes(bool enable) {
   verifySettings_();
 }
 
+void GpuIndexIMIPQv2::copyPrecomputedCodesFrom(float *precomputedCodes) {
+  FAISS_ASSERT(index_);
+  DeviceScope scope(config_.device);
+
+  auto precomputedCodesDevice = toDeviceNonTemporary<float, 3>(
+      resources_.get(), imipqConfig_.device, precomputedCodes,
+      AllocType::QuantizerPrecomputedCodes,
+      resources_->getDefaultStream(config_.device),
+      {quantizer->getCodebookSize(), subQuantizers_,
+       index_->getNumSubQuantizerCodes()});
+
+  index_->movePrecomputedCodesFrom(precomputedCodesDevice);
+}
+
+void GpuIndexIMIPQv2::copyFrom(faiss::IndexIVFPQ *index) {
+  DeviceScope scope(config_.device);
+
+  GpuIndexIMI::copyFrom(index);
+
+  // Clear out our old data
+  index_.reset();
+
+  pq = index->pq;
+  subQuantizers_ = index->pq.M;
+  bitsPerCode_ = index->pq.nbits;
+
+  // We only support this
+  FAISS_THROW_IF_NOT_MSG(imipqConfig_.interleavedLayout || index->pq.nbits == 8,
+                         "GPU: only pq.nbits == 8 is supported");
+  FAISS_THROW_IF_NOT_MSG(index->by_residual,
+                         "GPU: only by_residual = true is supported");
+  FAISS_THROW_IF_NOT_MSG(index->polysemous_ht == 0,
+                         "GPU: polysemous codes not supported");
+
+  verifySettings_();
+
+  // The other index might not be trained
+  if (!index->is_trained) {
+    // copied in GpuIndex::copyFrom
+    FAISS_ASSERT(!is_trained);
+    return;
+  }
+
+  // Copy our lists as well
+  // The product quantizer must have data in it
+  FAISS_ASSERT(index->pq.centroids.size() > 0);
+
+  index_.reset(new IMIPQv2(
+      resources_.get(), quantizer->getGpuData(), subQuantizers_, bitsPerCode_,
+      imipqConfig_.useMMCodeDistance, imipqConfig_.interleavedLayout,
+      imipqConfig_.precomputeCodesOnCpu, (float *)index->pq.centroids.data(),
+      imipqConfig_.indicesOptions, config_.memorySpace));
+
+  if (usePrecomputedTables_ && imipqConfig_.precomputeCodesOnCpu) {
+    FAISS_ASSERT(index->precomputed_table.size() ==
+                 quantizer->getCodebookSize() * subQuantizers_ *
+                     index_->getNumSubQuantizerCodes());
+
+    copyPrecomputedCodesFrom(index->precomputed_table.data());
+  }
+
+  // Copy all of the IVF data
+  index_->copyInvertedListsFrom(index->invlists);
+}
+
+void GpuIndexIMIPQv2::copyTo(faiss::IndexIVFPQ *index) const {
+  DeviceScope scope(config_.device);
+
+  // We must have the indices in order to copy to ourselves
+  FAISS_THROW_IF_NOT_MSG(imipqConfig_.indicesOptions != INDICES_IVF,
+                         "Cannot copy to CPU as GPU index doesn't retain "
+                         "indices (INDICES_IVF)");
+
+  GpuIndexIMI::copyTo(index);
+
+  //
+  // IndexIVFPQ information
+  //
+  index->by_residual = true;
+  index->use_precomputed_table = 2;
+  index->code_size = subQuantizers_;
+  index->pq = faiss::ProductQuantizer(this->d, subQuantizers_, bitsPerCode_);
+
+  index->do_polysemous_training = false;
+  index->polysemous_training = nullptr;
+
+  index->scan_table_threshold = 0;
+  index->max_codes = 0;
+  index->polysemous_ht = 0;
+  index->precomputed_table.clear();
+
+  auto ivf = new ArrayInvertedLists(nlist, index->code_size);
+  index->replace_invlists(ivf, true);
+
+  if (index_) {
+    // Copy IVF lists
+    index_->copyInvertedListsTo(ivf);
+
+    // Copy PQ centroids
+    auto devPQCentroids = index_->getPQCentroids();
+    index->pq.centroids.resize(devPQCentroids.numElements());
+
+    fromDevice<float, 3>(devPQCentroids, index->pq.centroids.data(),
+                         resources_->getDefaultStream(config_.device));
+
+    if (usePrecomputedTables_) {
+      index->precompute_table();
+    }
+  }
+}
+
 bool GpuIndexIMIPQv2::getPrecomputedCodes() const {
   return usePrecomputedTables_;
 }
@@ -190,11 +299,10 @@ void GpuIndexIMIPQv2::trainResidualQuantizer_(Index::idx_t n, const float *x) {
   index_.reset(new IMIPQv2(
       resources_.get(), quantizer->getGpuData(), subQuantizers_, bitsPerCode_,
       imipqConfig_.useMMCodeDistance, imipqConfig_.interleavedLayout,
-      pq.centroids.data(), imipqConfig_.indicesOptions, config_.memorySpace));
+      imipqConfig_.precomputeCodesOnCpu, pq.centroids.data(),
+      imipqConfig_.indicesOptions, config_.memorySpace));
 
   FAISS_ASSERT(this->nlist == index_->getNumLists());
-
-  index_->setPrecomputedCodes(imipqConfig_.usePrecomputedTables);
 }
 
 void GpuIndexIMIPQv2::train(Index::idx_t n, const float *x) {

@@ -5,6 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <faiss/IndexPQ.h>
 #include <faiss/MetricType.h>
 #include <faiss/gpu/GpuIndexIMI.h>
 #include <faiss/gpu/utils/CopyUtils.cuh>
@@ -66,6 +67,104 @@ size_t GpuIndexIMI::calcMemorySpaceSizeCoarseQuantizer(int numVecsTotal,
 }
 
 GpuMultiIndex2 *GpuIndexIMI::getQuantizer() { return quantizer; }
+
+void GpuIndexIMI::copyFrom(const faiss::IndexIVF *index) {
+  DeviceScope scope(config_.device);
+
+  GpuIndex::copyFrom(index);
+
+  auto multiIndexCpu =
+      dynamic_cast<faiss::MultiIndexQuantizer *>(index->quantizer);
+
+  FAISS_THROW_IF_NOT_MSG(
+      multiIndexCpu,
+      "Only MultiIndexQuantizer is supported for the coarse quantizer "
+      "for copying from an IndexIVF into a GpuIndexIMI");
+
+  delete quantizer;
+
+  GpuMultiIndex2Config config = imiConfig_.multiIndexConfig;
+  // FIXME: inherit our same device
+  config.device = config_.device;
+  quantizer = new GpuMultiIndex2(resources_, multiIndexCpu, config);
+
+  FAISS_ASSERT(index->nlist > 0);
+  FAISS_THROW_IF_NOT_FMT(index->nlist <=
+                             (Index::idx_t)std::numeric_limits<int>::max(),
+                         "GPU index only supports %zu inverted lists",
+                         (size_t)std::numeric_limits<int>::max());
+
+  this->nlist = index->nlist;
+
+  if (index->nprobe > quantizer->getCodebookSize()) {
+    FAISS_THROW_IF_NOT_FMT(index->nprobe <= quantizer->getCodebookSize() *
+                                                quantizer->getCodebookSize(),
+                           "nprobe must be <= %d",
+                           quantizer->getCodebookSize() *
+                               quantizer->getCodebookSize());
+    FAISS_THROW_IF_NOT_FMT(quantizer->getCodebookSize() <= getMaxKSelection(),
+                           "Quantizizer codebook size must be <= %d",
+                           getMaxKSelection());
+  } else {
+    FAISS_THROW_IF_NOT_FMT(index->nprobe <= getMaxKSelection(),
+                           "nprobe must be <= %d", getMaxKSelection());
+  }
+
+  this->nprobe = index->nprobe;
+
+  if (!index->is_trained) {
+    // copied in GpuIndex::copyFrom
+    FAISS_ASSERT(!is_trained && ntotal == 0);
+    return;
+  }
+
+  // copied in GpuIndex::copyFrom
+  // ntotal can exceed max int, but the number of vectors per inverted
+  // list cannot exceed this. We check this in the subclasses.
+  FAISS_ASSERT(is_trained && (ntotal == index->ntotal));
+
+  // Since we're trained, the quantizer must have data
+  FAISS_ASSERT(index->quantizer->ntotal > 0);
+}
+
+void GpuIndexIMI::copyTo(faiss::IndexIVF *index) const {
+  DeviceScope scope(config_.device);
+  //
+  // Index information
+  //
+  GpuIndex::copyTo(index);
+
+  //
+  // IndexIVF information
+  //
+  index->nlist = this->nlist;
+  index->nprobe = this->nprobe;
+
+  // Construct and copy the appropriate quantizer
+  faiss::MultiIndexQuantizer *q = nullptr;
+
+  if (this->metric_type == faiss::METRIC_L2) {
+    q = new faiss::MultiIndexQuantizer(
+        this->d, this->quantizer->getNumCodebooks(),
+        utils::log2(this->quantizer->getCodebookSize()));
+  } else {
+    // we should have one of the above metrics
+    FAISS_ASSERT(false);
+  }
+
+  FAISS_ASSERT(quantizer);
+  quantizer->copyTo(q);
+
+  if (index->own_fields) {
+    delete index->quantizer;
+  }
+
+  index->quantizer = q;
+  index->quantizer_trains_alone = 1;
+  index->own_fields = true;
+  index->cp = this->cp;
+  index->make_direct_map(false);
+}
 
 int GpuIndexIMI::getNumLists() const { return nlist; }
 

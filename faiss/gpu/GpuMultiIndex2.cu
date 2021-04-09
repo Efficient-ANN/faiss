@@ -114,8 +114,7 @@ void GpuMultiIndex2::copyFrom(const faiss::MultiIndexQuantizer *index) {
 
   data_.reset(new MultiIndex2(resources_.get(), this->d, config_.memorySpace));
 
-  FAISS_ASSERT(this->d % GpuMultiIndex2::NUM_CODEBOOKS == 0);
-  FAISS_ASSERT(this->d / GpuMultiIndex2::NUM_CODEBOOKS == index->pq.dsub);
+  FAISS_ASSERT(subDim_ == index->pq.dsub);
 
   subDim_ = index->pq.dsub;
   numVecsPerCodebook_ = index->pq.centroids.size() / this->d;

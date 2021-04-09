@@ -9,13 +9,17 @@
 #include <faiss/gpu/impl/IMIAppend.cuh>
 #include <faiss/gpu/impl/IMIBasev2.cuh>
 #include <faiss/gpu/impl/RemapIndices.h>
+#include <faiss/gpu/utils/ConversionOperators.cuh>
 #include <faiss/gpu/utils/CopyUtils.cuh>
 #include <faiss/gpu/utils/DeviceDefs.cuh>
 #include <faiss/gpu/utils/DeviceUtils.h>
 #include <faiss/gpu/utils/HostTensor.cuh>
+#include <faiss/invlists/InvertedLists.h>
 #include <limits>
+#include <string>
 #include <thrust/host_vector.h>
 #include <unordered_map>
+#include <vector>
 
 namespace faiss {
 namespace gpu {
@@ -162,7 +166,7 @@ int IMIBasev2::getListLength(int listId) {
                            stream);
   listLength = offsets[1] - offsets[0];
 
-  CudaEvent copyEnd(resources_->getDefaultStreamCurrentDevice());
+  CudaEvent copyEnd(stream);
   copyEnd.cpuWaitOnEvent();
   return listLength;
 }
@@ -269,6 +273,88 @@ std::vector<uint8_t> IMIBasev2::getListVectorData(int listId, bool gpuFormat) {
     // The GPU layout may be different than the CPU layout (e.g., vectors rather
     // than dimensions interleaved), translate back if necessary
     return translateCodesFromGpu_(std::move(gpuCodes), listLength);
+  }
+}
+
+void IMIBasev2::copyInvertedListsFrom(InvertedLists *ivf) {
+  FAISS_ASSERT(ivf->nlist == numLists_);
+
+  auto stream = resources_->getDefaultStreamCurrentDevice();
+  HostTensor<unsigned int, 1, true> newlistStartOffsets({numLists_ + 1});
+  unsigned int offset = 0;
+  std::vector<uint8_t> codesVector;
+  std::vector<Index::idx_t> idsVector;
+
+  for (size_t i = 0; i < numLists_; ++i) {
+    size_t listSizeSt = ivf->list_size(i);
+
+    // GPU index can only support max int entries per list
+    FAISS_THROW_IF_NOT_FMT(listSizeSt <=
+                               (size_t)std::numeric_limits<int>::max(),
+                           "GPU inverted list can only support "
+                           "%zu entries; %zu found",
+                           (size_t)std::numeric_limits<int>::max(), listSizeSt);
+
+    int listSize = listSizeSt;
+
+    const uint8_t *codes = (const uint8_t *)ivf->get_codes(i);
+    const Index::idx_t *ids = ivf->get_ids(i);
+
+    int listOffsetNumBytes = getGpuVectorsEncodingSize_(offset);
+    int listLengthNumBytes = getGpuVectorsEncodingSize_(listSize);
+
+    codesVector.resize(listLengthNumBytes);
+    idsVector.resize(listSize);
+
+    memcpy(codesVector.data(), codes, listLengthNumBytes);
+    memcpy(idsVector.data(), ids, listSize * sizeof(Index::idx_t));
+
+    DeviceTensor<uint8_t, 1, true, long> deviceListDataTensor(
+        deviceListData_.data() + listOffsetNumBytes,
+        {(long)listLengthNumBytes});
+    deviceListDataTensor.copyFrom(codesVector, stream);
+
+    if (indicesOptions_ == INDICES_64_BIT) {
+      DeviceTensor<Index::idx_t, 1, true> deviceListIndexTensor(
+          (Index::idx_t *)deviceListIndices_.data() + offset, {listSize});
+      deviceListIndexTensor.copyFrom(idsVector, stream);
+    } else {
+      DeviceTensor<Index::idx_t, 1, true> deviceListIndexTensorIdxT(
+          resources_, makeTempAlloc(AllocType::Other, stream), {listSize});
+      deviceListIndexTensorIdxT.copyFrom(idsVector, stream);
+
+      DeviceTensor<int, 1, true> deviceListIndexTensor(
+          (int *)deviceListIndices_.data() + offset, {listSize});
+      convertTensor(stream, deviceListIndexTensorIdxT, deviceListIndexTensor);
+    }
+
+    newlistStartOffsets[i] = offset;
+    offset += (unsigned int)listSize;
+
+    CudaEvent copyEnd(stream);
+    copyEnd.cpuWaitOnEvent();
+  }
+
+  newlistStartOffsets[numLists_] = offset;
+
+  DeviceTensor<unsigned int, 1, true> deviceListOffsetsTensor(
+      deviceListOffsets_.data(), {(int)deviceListOffsets_.size()});
+  DeviceTensor<unsigned int, 1, true> newlistStartOffsetsDevice(
+      resources_, makeTempAlloc(AllocType::Other, stream), newlistStartOffsets);
+
+  runIMIUpdateStartOffsets(deviceListOffsetsTensor, newlistStartOffsetsDevice,
+                           stream);
+
+  isMemoryReserved_ = true;
+}
+
+void IMIBasev2::copyInvertedListsTo(InvertedLists *ivf) {
+  for (int i = 0; i < numLists_; ++i) {
+    auto listIndices = getListIndices(i);
+    auto listData = getListVectorData(i, false);
+
+    ivf->add_entries(i, listIndices.size(), listIndices.data(),
+                     listData.data());
   }
 }
 

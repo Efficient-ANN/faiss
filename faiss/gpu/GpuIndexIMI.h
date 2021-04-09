@@ -8,6 +8,7 @@
 #pragma once
 
 #include <faiss/Clustering.h>
+#include <faiss/IndexIVF.h>
 #include <faiss/gpu/GpuIndex.h>
 #include <faiss/gpu/GpuIndicesOptions.h>
 #include <faiss/gpu/GpuMultiIndex2.h>
@@ -41,6 +42,12 @@ public:
   static size_t calcMemorySpaceSizeCoarseQuantizer(int numVecsTotal,
                                                    int dimPerCodebook,
                                                    bool useFloat16);
+
+  /// Copy what we need from the CPU equivalent
+  void copyFrom(const faiss::IndexIVF *index);
+
+  /// Copy what we have to the CPU equivalent
+  void copyTo(faiss::IndexIVF *index) const;
 
   /// Returns the number of inverted lists we're managing
   int getNumLists() const;

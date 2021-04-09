@@ -35,15 +35,15 @@ namespace gpu {
 IMIPQv2::IMIPQv2(GpuResources *resources, MultiIndex2 *quantizer,
                  int numSubQuantizers, int bitsPerSubQuantizer,
                  bool useMMCodeDistance, bool interleavedLayout,
-                 float *pqCentroidData, IndicesOptions indicesOptions,
-                 MemorySpace space)
+                 bool precomputeCodesOnCpu, float *pqCentroidData,
+                 IndicesOptions indicesOptions, MemorySpace space)
     : IMIBasev2(resources, quantizer, interleavedLayout, indicesOptions, space),
       numSubQuantizers_(numSubQuantizers),
       bitsPerSubQuantizer_(bitsPerSubQuantizer),
       numSubQuantizerCodes_(utils::pow2(bitsPerSubQuantizer_)),
       dimPerSubQuantizer_(dim_ / numSubQuantizers),
       useFloat16LookupTables_(false), useMMCodeDistance_(useMMCodeDistance),
-      precomputedCodes_(false) {
+      precomputedCodes_(false), precomputeCodesOnCpu_(precomputeCodesOnCpu_) {
   FAISS_ASSERT(pqCentroidData);
 
   FAISS_ASSERT(bitsPerSubQuantizer_ <= 8);
@@ -54,6 +54,7 @@ IMIPQv2::IMIPQv2(GpuResources *resources, MultiIndex2 *quantizer,
   FAISS_ASSERT(!interleavedLayout); // not supported yet
 
   setPQCentroids_(pqCentroidData);
+  setPrecomputedCodes(true);
 }
 
 IMIPQv2::~IMIPQv2() {}
@@ -126,8 +127,36 @@ size_t IMIPQv2::calcMemorySpaceSize(int numVecs, int numSubQuantizers,
          calcIndicesMemorySpaceSize(numVecs, options);
 }
 
+void IMIPQv2::movePrecomputedCodesFrom(
+    DeviceTensor<float, 3, true> &precomputedCode) {
+  FAISS_ASSERT(precomputedCode.getSize(0) == quantizer_->getCodebookSize());
+  FAISS_ASSERT(precomputedCode.getSize(1) == numSubQuantizers_);
+  FAISS_ASSERT(precomputedCode.getSize(2) == numSubQuantizerCodes_);
+
+  precomputedCodes_ = true;
+
+  if (precomputedCode_.numElements() > 0) {
+    precomputedCode_ = DeviceTensor<float, 3, true>();
+
+  } else if (precomputedCodeHalf_.numElements() > 0) {
+    precomputedCodeHalf_ = DeviceTensor<half, 3, true>();
+  }
+
+  auto stream = resources_->getDefaultStreamCurrentDevice();
+  if (useFloat16LookupTables_) {
+    precomputedCodeHalf_ = DeviceTensor<half, 3, true>(
+        resources_, makeDevAlloc(AllocType::QuantizerPrecomputedCodes, stream),
+        {quantizer_->getCodebookSize(), numSubQuantizers_,
+         numSubQuantizerCodes_});
+
+    convertTensor(stream, precomputedCode, precomputedCodeHalf_);
+  } else {
+    precomputedCode_ = std::move(precomputedCode);
+  }
+}
+
 void IMIPQv2::setPrecomputedCodes(bool enable) {
-  if (precomputedCodes_ != enable) {
+  if (precomputedCodes_ != enable && !precomputeCodesOnCpu_) {
     precomputedCodes_ = enable;
 
     if (precomputedCodes_) {
@@ -527,6 +556,8 @@ void IMIPQv2::query_split(Tensor<float, 2, true> &queries, int nprobe, int k,
   query(queriesTransposeView, nprobe, k, outDistances, outIndices);
 }
 
+int IMIPQv2::getNumSubQuantizerCodes() { return numSubQuantizerCodes_; }
+
 Tensor<float, 3, true> IMIPQv2::getPQCentroids() {
   return pqCentroidsMiddleCode_;
 }
@@ -579,6 +610,8 @@ void IMIPQv2::runPQPrecomputedCodes_(
     DeviceTensor<float, 2, true> &coarseDistances,
     DeviceTensor<ushort2, 2, true> &coarseIndices, int k,
     Tensor<float, 2, true> &outDistances, Tensor<long, 2, true> &outIndices) {
+  FAISS_ASSERT(precomputedCode_.numElements() > 0);
+
   auto stream = resources_->getDefaultStreamCurrentDevice();
 
   int numQueries = queries.getSize(0) / quantizer_->getNumCodebooks();

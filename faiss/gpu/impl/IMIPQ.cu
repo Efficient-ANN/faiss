@@ -53,6 +53,7 @@ IMIPQ::IMIPQ(GpuResources *resources, MultiIndex2 *quantizer,
   FAISS_ASSERT(interleavedLayout || isSupportedPQCodeLength(numSubQuantizers_));
 
   setPQCentroids_(pqCentroidData);
+  setPrecomputedCodes(true);
 }
 
 IMIPQ::~IMIPQ() {}

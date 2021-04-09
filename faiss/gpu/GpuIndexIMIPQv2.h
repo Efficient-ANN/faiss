@@ -15,6 +15,8 @@
 #include <unordered_map>
 #include <vector>
 
+namespace faiss { struct IndexIVFPQ; }
+
 namespace faiss {
 namespace gpu {
 
@@ -51,6 +53,16 @@ public:
   void applyExpectedNumAddsPerList();
 
   void resetExpectedNumAddsPerList();
+
+  void copyPrecomputedCodesFrom(float *precomputedCodes);
+
+  /// Initialize ourselves from the given CPU index; will overwrite
+  /// all data in ourselves
+  void copyFrom(faiss::IndexIVFPQ* index);
+
+  /// Copy ourselves to the given CPU index; will overwrite all data
+  /// in the index instance
+  void copyTo(faiss::IndexIVFPQ* index) const;
 
   /// Enable or disable pre-computed codes
   void setPrecomputedCodes(bool enable);

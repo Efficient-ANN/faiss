@@ -18,6 +18,10 @@
 #include <vector>
 
 namespace faiss {
+struct InvertedLists;
+}
+
+namespace faiss {
 namespace gpu {
 
 class GpuResources;
@@ -67,6 +71,12 @@ public:
   /// Return the encoded vectors of a particular list back to the CPU
   std::vector<uint8_t> getListVectorData(int listId, bool gpuFormat);
 
+  /// Copy all inverted lists from a CPU representation to ourselves
+  void copyInvertedListsFrom(InvertedLists *ivf);
+
+  /// Copy all inverted lists from ourselves to a CPU representation
+  void copyInvertedListsTo(InvertedLists *ivf);
+
   /// Classify and encode/add vectors to our IVF lists.
   /// The input data must be on our current device.
   /// Returns the number of vectors successfully added. Vectors may
@@ -75,6 +85,7 @@ public:
                  Tensor<Index::idx_t, 1, true> &indices);
 
 protected:
+
   /// Returns the number of bytes in which an IVF list containing numVecs
   /// vectors is encoded on the device. Note that due to padding this is not the
   /// same as the encoding size for a subset of vectors in an IVF list; this is

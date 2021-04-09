@@ -22,7 +22,8 @@ class IMIPQ;
 struct GpuIndexIMIPQConfig : public GpuIndexIMIConfig {
   inline GpuIndexIMIPQConfig()
       : useFloat16LookupTables(false), usePrecomputedTables(true),
-        interleavedLayout(false), useMMCodeDistance(false) {}
+        interleavedLayout(false), useMMCodeDistance(false),
+        precomputeCodesOnCpu(false) {}
 
   /// Whether or not float16 residual distance tables are used in the
   /// list scanning kernels.
@@ -45,6 +46,7 @@ struct GpuIndexIMIPQConfig : public GpuIndexIMIConfig {
   /// of dimensions per sub-quantizer that is not natively specialized (an odd
   /// number like 7 or so).
   bool useMMCodeDistance;
+  bool precomputeCodesOnCpu;
 };
 
 class GpuIndexIMIPQ : public GpuIndexIMI {
