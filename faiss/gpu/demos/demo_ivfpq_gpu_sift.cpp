@@ -56,7 +56,7 @@ void search(faiss::gpu::StandardGpuResources *res, faiss::Index *index,
 
     std::cout << "IVFPQ search time on GPU: " << tGpu / nRuns << std::endl;
 
-    int n_1 = 0, n_10 = 0, n_100 = 0, n_1000 = 0;
+    int n_1 = 0, n_10 = 0, n_100 = 0, n_1024 = 0;
     for (int a = 0; a < numQueries; a++) {
       faiss::Index::idx_t firstGrounTruthId = groundTruth[a * groundTruthK];
       for (int b = 0; b < k; b++) {
@@ -70,8 +70,8 @@ void search(faiss::gpu::StandardGpuResources *res, faiss::Index *index,
           if (b < 100) {
             n_100++;
           }
-          if (b < 1000) {
-            n_1000++;
+          if (b < 1024) {
+            n_1024++;
           }
           break;
         }
@@ -80,7 +80,7 @@ void search(faiss::gpu::StandardGpuResources *res, faiss::Index *index,
     std::cout << "R@1 = " << n_1 / double(numQueries) << std::endl;
     std::cout << "R@10 = " << n_10 / double(numQueries) << std::endl;
     std::cout << "R@100 = " << n_100 / double(numQueries) << std::endl;
-    std::cout << "R@1000 = " << n_1000 / double(numQueries) << std::endl;
+    std::cout << "R@1024 = " << n_1024 / double(numQueries) << std::endl;
   }
 }
 
@@ -178,7 +178,7 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
     FILE *f = fopen(fileNameIndex.c_str(), "rb");
     if (f) {
       fclose(f);
-      
+
       faiss::IndexIVFPQ *cpu_index = dynamic_cast<faiss::IndexIVFPQ *>(
           faiss::read_index(fileNameIndex.c_str()));
 
