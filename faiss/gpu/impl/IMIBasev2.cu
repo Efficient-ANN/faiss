@@ -19,6 +19,7 @@
 #include <string>
 #include <thrust/host_vector.h>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace faiss {
@@ -330,6 +331,7 @@ void IMIBasev2::copyInvertedListsFrom(InvertedLists *ivf) {
 
     newlistStartOffsets[i] = offset;
     offset += (unsigned int)listSize;
+    maxListLength_ = std::max(maxListLength_, listSize);
 
     CudaEvent copyEnd(stream);
     copyEnd.cpuWaitOnEvent();
