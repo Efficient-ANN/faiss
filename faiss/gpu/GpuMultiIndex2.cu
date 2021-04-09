@@ -121,19 +121,27 @@ void GpuMultiIndex2::copyFrom(const faiss::MultiIndexQuantizer *index) {
 
   FAISS_ASSERT(this->ntotal == numVecsPerCodebook_ * numVecsPerCodebook_);
 
-  // The index could be empty
-  if (index->ntotal > 0) {
-
-    if (this->is_trained) {
-      data_->reset();
-    }
-
-    data_->add(index->pq.centroids.data(),
-               GpuMultiIndex2::NUM_CODEBOOKS * numVecsPerCodebook_,
-               resources_->getDefaultStream(config_.device));
-
-    FAISS_ASSERT(this->is_trained);
+  // The other index might not be trained
+  if (!index->is_trained) {
+    // copied in GpuIndex::copyFrom
+    FAISS_ASSERT(!this->is_trained);
+    return;
   }
+
+
+  if (this->is_trained) {
+    data_->reset();
+  }
+
+  FAISS_ASSERT(ndex->pq.centroids.size() ==
+                GpuMultiIndex2::NUM_CODEBOOKS * numVecsPerCodebook_);
+
+  auto stream = resources_->getDefaultStream(config_.device);
+
+  data_->add(index->pq.centroids.data(),
+              GpuMultiIndex2::NUM_CODEBOOKS * numVecsPerCodebook_, stream);
+
+  FAISS_ASSERT(this->is_trained);
 }
 
 void GpuMultiIndex2::copyTo(faiss::MultiIndexQuantizer *index) const {
