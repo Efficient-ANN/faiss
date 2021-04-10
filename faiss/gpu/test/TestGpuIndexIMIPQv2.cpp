@@ -851,9 +851,8 @@ void testCopyFrom(int d, int nbitsCoarseQuantizer, int coarseCodebookSize,
   }
 }
 
-void testCopyTo(int d, int nbitsCoarseQuantizer, int coarseCodebookSize,
-                int numSubQuantizers, int nbitsSubQuantizer,
-                int numOfTrainingVecs) {
+void testCopyTo(int d, int coarseCodebookSize, int numSubQuantizers,
+                int nbitsSubQuantizer, int numOfTrainingVecs) {
   faiss::gpu::StandardGpuResources res;
   faiss::gpu::GpuIndexIMIPQConfig config;
 
@@ -866,8 +865,6 @@ void testCopyTo(int d, int nbitsCoarseQuantizer, int coarseCodebookSize,
     std::vector<float> vecs = faiss::gpu::randVecs(numOfTrainingVecs, d);
     imipqGpu.train(numOfTrainingVecs, vecs.data());
   }
-
-  constexpr int M = 2;
 
   faiss::IndexIVFPQ imipqCpu;
 
@@ -899,6 +896,36 @@ void testCopyTo(int d, int nbitsCoarseQuantizer, int coarseCodebookSize,
   {
     std::vector<float> gpuPQCentroids = imipqGpu.getPQCentroids();
     EXPECT_EQ(imipqCpu.pq.centroids, gpuPQCentroids);
+  }
+}
+
+void testComparePrecomputedCodesWithCpu(int d, int coarseCodebookSize,
+                                        int numSubQuantizers,
+                                        int nbitsSubQuantizer,
+                                        int numOfTrainingVecs) {
+  faiss::gpu::StandardGpuResources res;
+  faiss::gpu::GpuIndexIMIPQConfig config;
+
+  config.usePrecomputedTables = true;
+
+  faiss::gpu::GpuIndexIMIPQv2 imipqGpu(
+      &res, d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer, config);
+
+  {
+    std::vector<float> vecs = faiss::gpu::randVecs(numOfTrainingVecs, d);
+    imipqGpu.train(numOfTrainingVecs, vecs.data());
+  }
+
+  faiss::IndexIVFPQ imipqCpu;
+
+  imipqGpu.copyTo(&imipqCpu);
+
+  {
+    std::vector<float> term2Gpu = imipqGpu.getPrecomputedCodesVec();
+
+    for (size_t i = 0; i < term2Gpu.size(); i++) {
+      EXPECT_EQ(term2Gpu[i], imipqCpu.precomputed_table[i]);
+    }
   }
 }
 
@@ -984,7 +1011,6 @@ TEST(TestGpuIndexIMIPQ, copyFrom) {
 
 TEST(TestGpuIndexIMIPQ, copyTo) {
   std::vector<int> dList = {2, 4};
-  std::vector<int> nbitsList = {0, 2, 2};
   std::vector<int> numCentroidsPerCodebookList = {1, 4, 6};
   int numSubQuantizers = 2;
   int bitsPerCode = 8;
@@ -993,8 +1019,25 @@ TEST(TestGpuIndexIMIPQ, copyTo) {
     for (int j = 0; j < numCentroidsPerCodebookList.size(); j++) {
       int numTrainingVecs =
           std::max((1 << bitsPerCode), numCentroidsPerCodebookList[j]) * 39;
-      testCopyTo(dList[i], nbitsList[j], numCentroidsPerCodebookList[j],
-                 numSubQuantizers, bitsPerCode, numTrainingVecs);
+      testCopyTo(dList[i], numCentroidsPerCodebookList[j], numSubQuantizers,
+                 bitsPerCode, numTrainingVecs);
+    }
+  }
+}
+
+TEST(TestGpuIndexIMIPQ, comparePrecomputedCodesWithCpu) {
+  std::vector<int> dList = {2, 4};
+  std::vector<int> numCentroidsPerCodebookList = {1, 4, 6};
+  int numSubQuantizers = 2;
+  int bitsPerCode = 8;
+
+  for (int i = 0; i < dList.size(); i++) {
+    for (int j = 0; j < numCentroidsPerCodebookList.size(); j++) {
+      int numTrainingVecs =
+          std::max((1 << bitsPerCode), numCentroidsPerCodebookList[j]) * 39;
+      testComparePrecomputedCodesWithCpu(
+          dList[i], numCentroidsPerCodebookList[j], numSubQuantizers,
+          bitsPerCode, numTrainingVecs);
     }
   }
 }
