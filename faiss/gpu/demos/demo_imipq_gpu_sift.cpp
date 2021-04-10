@@ -182,8 +182,9 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
       options.indicesOptions = config.indicesOptions;
       options.usePrecomputed = config.usePrecomputedTables;
 
-      ivfpq = dynamic_cast<faiss::gpu::GpuIndexIMIPQv2 *>(
-          faiss::gpu::index_cpu_to_gpu(res, config.device, indexCpu, options));
+      imipqGpu = dynamic_cast<faiss::gpu::GpuIndexIMIPQv2 *>(
+          faiss::gpu::index_cpu_to_gpu(&res, config.device, indexCpu,
+                                       &options));
 
       delete indexCpu;
 
@@ -308,7 +309,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
     }
 
     if (!fileNameIndex.empty()) {
-      faiss::Index *indexCpu = faiss::gpu::index_gpu_to_cpu(ivfpq);
+      faiss::Index *indexCpu = faiss::gpu::index_gpu_to_cpu(imipqGpu);
       faiss::write_index(indexCpu, fileNameIndex.c_str());
       delete indexCpu;
     }

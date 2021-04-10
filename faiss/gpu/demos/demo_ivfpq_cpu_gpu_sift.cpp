@@ -190,7 +190,8 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
       options.precomputeCodesOnCpu = config.precomputeCodesOnCpu;
 
       ivfpq = dynamic_cast<faiss::gpu::GpuIndexIVFPQ *>(
-          faiss::gpu::index_cpu_to_gpu(res, config.device, indexCpu, options));
+          faiss::gpu::index_cpu_to_gpu(&res, config.device, indexCpu,
+                                       &options));
 
       delete indexCpu;
 
