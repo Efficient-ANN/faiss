@@ -12,6 +12,7 @@
 #include <faiss/gpu/StandardGpuResources.h>
 #include <faiss/gpu/utils/DeviceUtils.h>
 #include <faiss/gpu/test/TestUtils.h>
+#include <algorithm>
 #include <cmath>
 #include <gtest/gtest.h>
 #include <sstream>
@@ -641,9 +642,9 @@ TEST(TestGpuIndexIVFPQ, UnifiedMemory) {
                              0.015f);
 }
 
-TEST(TestGpuIndexIMIPQ, copyPrecomputedCodesFrom) {
-  std::vector<int> dList = {2, 4};
-  std::vector<int> nlistList = {1, 4, 6};
+TEST(TestGpuIndexIVFPQ, CopyPrecomputedCodesFrom) {
+  std::vector<int> dList = {8};
+  std::vector<int> nlistList = {8};
   int numSubQuantizers = 2;
   int bitsPerCode = 8;
 
@@ -651,19 +652,11 @@ TEST(TestGpuIndexIMIPQ, copyPrecomputedCodesFrom) {
     for (int j = 0; j < nlistList.size(); j++) {
       int d = dList[i];
       int nlist = nlistList[j];
-      int numTrainingVecs = nlist * 39;
-
+      int numTrainingVecs = std::max((1 << bitsPerCode), nlist) * 39;
+      
       faiss::IndexFlatL2 flatIndex(d);
       faiss::IndexIVFPQ ivfpqCpu(&flatIndex, d, nlist, numSubQuantizers,
                                 bitsPerCode);
-
-      {
-        std::vector<float> vecs = faiss::gpu::randVecs(numTrainingVecs, d);
-        ivfpqCpu.train(numTrainingVecs, vecs.data());
-      }
-
-      ivfpqCpu.use_precomputed_table = 1;
-      ivfpqCpu.precompute_table();
 
       faiss::gpu::StandardGpuResources res;
       faiss::gpu::GpuIndexIVFPQConfig config;
@@ -674,6 +667,14 @@ TEST(TestGpuIndexIMIPQ, copyPrecomputedCodesFrom) {
       faiss::gpu::GpuIndexIVFPQ ivfpqGpu(
           &res, d, nlist, numSubQuantizers, bitsPerCode, faiss::MetricType::METRIC_L2, config);
 
+      {
+        std::vector<float> vecs = faiss::gpu::randVecs(numTrainingVecs, d);
+        ivfpqCpu.train(numTrainingVecs, vecs.data());
+        ivfpqGpu.train(numTrainingVecs, vecs.data());
+      }
+
+      ivfpqCpu.use_precomputed_table = 1;
+      ivfpqCpu.precompute_table();
       ivfpqGpu.copyPrecomputedCodesFrom(ivfpqCpu.precomputed_table.data());
 
       {

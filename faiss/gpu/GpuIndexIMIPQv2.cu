@@ -208,6 +208,7 @@ void GpuIndexIMIPQv2::copyFrom(const faiss::IndexIVFPQ *index) {
     copyPrecomputedCodesFrom(index->precomputed_table.data());
   }
 
+  index_->reset(index->ntotal);
   // Copy all of the IVF data
   index_->copyInvertedListsFrom(index->invlists);
 }

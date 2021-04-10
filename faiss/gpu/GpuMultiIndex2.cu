@@ -134,7 +134,7 @@ void GpuMultiIndex2::copyFrom(const faiss::MultiIndexQuantizer *index) {
   }
 
   FAISS_ASSERT(index->pq.centroids.size() ==
-                GpuMultiIndex2::NUM_CODEBOOKS * numVecsPerCodebook_);
+                numVecsPerCodebook_ * this->d);
 
   auto stream = resources_->getDefaultStream(config_.device);
 
