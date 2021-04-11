@@ -357,6 +357,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
   }
   delete queries;
   delete groundTruth;
+  delete imipqGpu;
 }
 
 int main(int argc, char **argv) {
