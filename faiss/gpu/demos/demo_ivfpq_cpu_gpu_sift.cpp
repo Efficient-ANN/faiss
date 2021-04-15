@@ -235,6 +235,9 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
 
       if (storeCoarseQuantizer) {
         faiss::Index *indexCpu = faiss::gpu::index_gpu_to_cpu(ivfpq->quantizer);
+        faiss::gpu::CudaEvent cloneEnd(
+            res.getResources()->getDefaultStreamCurrentDevice());
+        cloneEnd.cpuWaitOnEvent();
         faiss::write_index(indexCpu, fileNameCoarseQuantizer.c_str());
         delete indexCpu;
       }
@@ -250,6 +253,10 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
 
       faiss::IndexIVFPQ *ivfpqCpu = dynamic_cast<faiss::IndexIVFPQ *>(
           faiss::gpu::index_gpu_to_cpu(ivfpq));
+
+      faiss::gpu::CudaEvent cloneEnd(
+          res.getResources()->getDefaultStreamCurrentDevice());
+      cloneEnd.cpuWaitOnEvent();
 
       ivfpqCpu->use_precomputed_table = 1;
       ivfpqCpu->precompute_table();
@@ -332,6 +339,9 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
 
     if (!fileNameIndex.empty()) {
       faiss::Index *indexCpu = faiss::gpu::index_gpu_to_cpu(ivfpq);
+      faiss::gpu::CudaEvent cloneEnd(
+          res.getResources()->getDefaultStreamCurrentDevice());
+      cloneEnd.cpuWaitOnEvent();
       faiss::write_index(indexCpu, fileNameIndex.c_str());
       delete indexCpu;
     }

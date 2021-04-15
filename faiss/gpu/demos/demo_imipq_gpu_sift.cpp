@@ -231,6 +231,9 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
       if (storeCoarseQuantizer) {
         faiss::Index *cpu_index =
             faiss::gpu::index_gpu_to_cpu(imipqGpu->quantizer);
+        faiss::gpu::CudaEvent cloneEnd(
+            res.getResources()->getDefaultStreamCurrentDevice());
+        cloneEnd.cpuWaitOnEvent();
         faiss::write_index(cpu_index, fileNameCoarseQuantizer.c_str());
         delete cpu_index;
       }
@@ -310,6 +313,9 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
 
     if (!fileNameIndex.empty()) {
       faiss::Index *indexCpu = faiss::gpu::index_gpu_to_cpu(imipqGpu);
+      faiss::gpu::CudaEvent cloneEnd(
+          res.getResources()->getDefaultStreamCurrentDevice());
+      cloneEnd.cpuWaitOnEvent();
       faiss::write_index(indexCpu, fileNameIndex.c_str());
       delete indexCpu;
     }
