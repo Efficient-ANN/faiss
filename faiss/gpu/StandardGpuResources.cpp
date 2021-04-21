@@ -185,7 +185,8 @@ void
 StandardGpuResourcesImpl::setTempMemory(size_t size) {
   if (tempMemSize_ != size) {
     // adjust based on general limits
-    tempMemSize_ = getDefaultTempMemForGPU(-1, size);
+    //tempMemSize_ = getDefaultTempMemForGPU(-1, size);
+    tempMemSize_ = size;
 
     // We need to re-initialize memory resources for all current devices that
     // have been initialized.
@@ -202,7 +203,8 @@ StandardGpuResourcesImpl::setTempMemory(size_t size) {
         new StackDeviceMemory(this,
                               p.first,
                               // adjust for this specific device
-                              getDefaultTempMemForGPU(device, tempMemSize_)));
+                              //getDefaultTempMemForGPU(device, tempMemSize_)
+                              tempMemSize_));
     }
   }
 }
@@ -370,7 +372,8 @@ StandardGpuResourcesImpl::initializeForDevice(int device) {
     new StackDeviceMemory(this,
                           device,
                           // adjust for this specific device
-                          getDefaultTempMemForGPU(device, tempMemSize_)));
+                          //getDefaultTempMemForGPU(device, tempMemSize_)
+                          tempMemSize_));
 
   tempMemory_.emplace(device, std::move(mem));
 }
