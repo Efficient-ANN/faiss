@@ -145,7 +145,7 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
   std::cout << "ivfStructureMemSize: " << ivfStructureMemSize << std::endl;
 
   faiss::gpu::StandardGpuResources res(fixedMemSize);
-  size_t devFreeLimit = std::max(devFree, safeMemMargin);
+  size_t devFreeLimit = std::min(devFree, safeMemMargin);
   size_t tempMemory =
       devFreeLimit -
       faiss::gpu::utils::roundUp(fixedMemSize + 256, (size_t)maxPageSize) -
