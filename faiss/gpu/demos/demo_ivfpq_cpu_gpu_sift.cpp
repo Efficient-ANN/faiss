@@ -117,7 +117,7 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
                 size_t queriesOffset, std::string fileNameGroundTruth,
                 int numQueriesBegin, int numQueriesEnd, int nprobeBegin,
                 int nprobeEnd, int kBegin, int kEnd, bool usePrecomputed,
-                long safeMemMargin, std::string fileNameCoarseQuantizer,
+                size_t safeMemMargin, std::string fileNameCoarseQuantizer,
                 std::string fileNameIndex) {
 
   size_t devFree = 0;
@@ -145,17 +145,11 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
   std::cout << "ivfStructureMemSize: " << ivfStructureMemSize << std::endl;
 
   faiss::gpu::StandardGpuResources res(fixedMemSize);
+  size_t devFreeLimit = std::max(devFree, safeMemMargin);
   size_t tempMemory =
-      devFree -
+      devFreeLimit -
       faiss::gpu::utils::roundUp(fixedMemSize + 256, (size_t)maxPageSize) -
       ivfStructureMemSize;
-
-  if (safeMemMargin >= 0) {
-    tempMemory += safeMemMargin;
-  } else {
-    safeMemMargin *= -1;
-    tempMemory -= (size_t)safeMemMargin;
-  }
 
   res.setTempMemory(tempMemory / 256 * 256);
   std::cout << "tempMemory: " << tempMemory << std::endl;
@@ -337,14 +331,14 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
       std::cout << "IVFPQ add time on GPU: " << tGpu << std::endl;
     }
 
-    if (!fileNameIndex.empty()) {
-      faiss::Index *indexCpu = faiss::gpu::index_gpu_to_cpu(ivfpq);
-      faiss::gpu::CudaEvent cloneEnd(
-          res.getResources()->getDefaultStreamCurrentDevice());
-      cloneEnd.cpuWaitOnEvent();
-      faiss::write_index(indexCpu, fileNameIndex.c_str());
-      delete indexCpu;
-    }
+    // if (!fileNameIndex.empty()) {
+    //   faiss::Index *indexCpu = faiss::gpu::index_gpu_to_cpu(ivfpq);
+    //   faiss::gpu::CudaEvent cloneEnd(
+    //       res.getResources()->getDefaultStreamCurrentDevice());
+    //   cloneEnd.cpuWaitOnEvent();
+    //   faiss::write_index(indexCpu, fileNameIndex.c_str());
+    //   delete indexCpu;
+    // }
   }
 
   std::cout << "maxListLength: " << ivfpq->getMaxListLength() << std::endl;
@@ -409,7 +403,7 @@ int main(int argc, char **argv) {
   size_t numTrainingVecs, numIndexingVecs;
   std::string fileNameTraining, fileNameIndexing, fileNameQueries,
       fileNameGroundTruth, fileNameCoarseQuantizer, fileNameIndex;
-  long safeMemMargin;
+  size_t safeMemMargin;
 
   d = std::stoi(argv[1]);
   coarseCodebookSize = std::stoi(argv[2]);
@@ -431,7 +425,7 @@ int main(int argc, char **argv) {
   isFloat = std::stoi(argv[18]);
   usePrecomputed = argc > 19 ? std::stoi(argv[19]) : 1;
   numThreads = argc > 20 ? std::stoi(argv[20]) : 1;
-  safeMemMargin = argc > 21 ? std::stol(argv[21]) : 0;
+  safeMemMargin = argc > 21 ? std::stoul(argv[21]) : 0;
   fileNameCoarseQuantizer = argc > 22 ? argv[22] : "";
   fileNameIndex = argc > 23 ? argv[23] : "";
 
