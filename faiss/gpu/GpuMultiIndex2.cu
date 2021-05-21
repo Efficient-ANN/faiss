@@ -304,9 +304,13 @@ void GpuMultiIndex2::assign(Index::idx_t n, const float *x,
 
   if (this->numVecsPerCodebook_ > getMaxKSelection()) {
     // Maximum k-selection supported is based on the CUDA SDK
+    // FAISS_THROW_IF_NOT_FMT(k <= (Index::idx_t)getMaxKSelection(),
+    //                        "GPU index only supports k <= %d (requested %d)",
+    //                        getMaxKSelection(),
+    //                        (int)k); // select limitation
     FAISS_THROW_IF_NOT_FMT(k <= (Index::idx_t)getMaxKSelection(),
                            "GPU index only supports k <= %d (requested %d)",
-                           getMaxKSelection(),
+                           getMaxKSelection() * getMaxKSelection(),
                            (int)k); // select limitation
   } else {
     FAISS_THROW_IF_NOT_FMT(k <= (Index::idx_t)this->numVecsPerCodebook_ *
@@ -342,9 +346,13 @@ void GpuMultiIndex2::assign_pair(Index::idx_t n, const float *x,
 
   if (this->numVecsPerCodebook_ > getMaxKSelection()) {
     // Maximum k-selection supported is based on the CUDA SDK
+    // FAISS_THROW_IF_NOT_FMT(k <= (Index::idx_t)getMaxKSelection(),
+    //                        "GPU index only supports k <= %d (requested %d)",
+    //                        getMaxKSelection(),
+    //                        (int)k); // select limitation
     FAISS_THROW_IF_NOT_FMT(k <= (Index::idx_t)getMaxKSelection(),
                            "GPU index only supports k <= %d (requested %d)",
-                           getMaxKSelection(),
+                           getMaxKSelection() * getMaxKSelection(),
                            (int)k); // select limitation
   } else {
     FAISS_THROW_IF_NOT_FMT(k <= (Index::idx_t)this->numVecsPerCodebook_ *
@@ -377,9 +385,13 @@ void GpuMultiIndex2::search(Index::idx_t n, const float *x, Index::idx_t k,
 
   if (this->numVecsPerCodebook_ > getMaxKSelection()) {
     // Maximum k-selection supported is based on the CUDA SDK
+    // FAISS_THROW_IF_NOT_FMT(k <= (Index::idx_t)getMaxKSelection(),
+    //                        "GPU index only supports k <= %d (requested %d)",
+    //                        getMaxKSelection(),
+    //                        (int)k); // select limitation
     FAISS_THROW_IF_NOT_FMT(k <= (Index::idx_t)getMaxKSelection(),
                            "GPU index only supports k <= %d (requested %d)",
-                           getMaxKSelection(),
+                           getMaxKSelection() * getMaxKSelection(),
                            (int)k); // select limitation
   } else {
     FAISS_THROW_IF_NOT_FMT(k <= (Index::idx_t)this->numVecsPerCodebook_ *
@@ -634,9 +646,13 @@ void GpuMultiIndex2::search_pair(Index::idx_t n, const float *x, Index::idx_t k,
 
   if (this->numVecsPerCodebook_ > getMaxKSelection()) {
     // Maximum k-selection supported is based on the CUDA SDK
+    // FAISS_THROW_IF_NOT_FMT(k <= (Index::idx_t)getMaxKSelection(),
+    //                        "GPU index only supports k <= %d (requested %d)",
+    //                        getMaxKSelection(),
+    //                        (int)k); // select limitation
     FAISS_THROW_IF_NOT_FMT(k <= (Index::idx_t)getMaxKSelection(),
                            "GPU index only supports k <= %d (requested %d)",
-                           getMaxKSelection(),
+                           getMaxKSelection() * getMaxKSelection(),
                            (int)k); // select limitation
   } else {
     FAISS_THROW_IF_NOT_FMT(k <= (Index::idx_t)this->numVecsPerCodebook_ *

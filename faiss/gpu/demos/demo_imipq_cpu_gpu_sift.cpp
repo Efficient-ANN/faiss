@@ -346,7 +346,9 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
 
   std::vector<int> numQueriesList = {1, 1000, 8192, 10000};
   std::vector<int> nprobeList = {1,  2,   4,   8,   16,   32,
-                                 64, 128, 256, 512, 1024, 2048};
+                                 64, 128, 256, 512, 1024, 2048,
+                                 2194, 2352, 2521, 2702, 2896, 4096,
+                                 8192, 16384, 32768, 65536};
 
   float *queries;
   if (isVecFloat) {
