@@ -112,8 +112,8 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
                 size_t queriesOffset, std::string fileNameGroundTruth,
                 int numQueriesBegin, int numQueriesEnd, int nprobeBegin,
                 int nprobeEnd, int kBegin, int kEnd, size_t safeMemMargin,
-                std::string fileNameCoarseQuantizer,
-                std::string fileNameIndex) {
+                std::string fileNameCoarseQuantizer, std::string fileNameIndex,
+                bool profile) {
   size_t devFree = 0;
   size_t devTotal = 0;
   constexpr int maxPageSize = 2 * 1024 * 1024; // 2MB
@@ -199,11 +199,11 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
         FILE *f = fopen(fileNameCoarseQuantizer.c_str(), "rb");
         if (f) {
           fclose(f);
-          faiss::MultiIndexQuantizer *cpu_index =
+          faiss::MultiIndexQuantizer *indexCpu =
               dynamic_cast<faiss::MultiIndexQuantizer *>(
                   faiss::read_index(fileNameCoarseQuantizer.c_str()));
-          imipqGpu->quantizer->copyFrom(cpu_index);
-          delete cpu_index;
+          imipqGpu->quantizer->copyFrom(indexCpu);
+          delete indexCpu;
           storeCoarseQuantizer = false;
         }
       }
@@ -225,13 +225,13 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
       delete trainingVecs;
 
       if (storeCoarseQuantizer) {
-        faiss::Index *cpu_index =
+        faiss::Index *indexCpu =
             faiss::gpu::index_gpu_to_cpu(imipqGpu->quantizer);
         faiss::gpu::CudaEvent cloneEnd(
             res.getResources()->getDefaultStreamCurrentDevice());
         cloneEnd.cpuWaitOnEvent();
-        faiss::write_index(cpu_index, fileNameCoarseQuantizer.c_str());
-        delete cpu_index;
+        faiss::write_index(indexCpu, fileNameCoarseQuantizer.c_str());
+        delete indexCpu;
       }
     }
 
@@ -332,60 +332,61 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
       std::cout << "IMIPQ add time on GPU: " << tGpu << std::endl;
     }
 
-    // if (!fileNameIndex.empty()) {
-    //   faiss::Index *indexCpu = faiss::gpu::index_gpu_to_cpu(imipqGpu);
-    //   faiss::gpu::CudaEvent cloneEnd(
-    //       res.getResources()->getDefaultStreamCurrentDevice());
-    //   cloneEnd.cpuWaitOnEvent();
-    //   faiss::write_index(indexCpu, fileNameIndex.c_str());
-    //   delete indexCpu;
-    // }
+    if (!fileNameIndex.empty()) {
+      faiss::Index *indexCpu = faiss::gpu::index_gpu_to_cpu(imipqGpu);
+      faiss::gpu::CudaEvent cloneEnd(
+          res.getResources()->getDefaultStreamCurrentDevice());
+      cloneEnd.cpuWaitOnEvent();
+      faiss::write_index(indexCpu, fileNameIndex.c_str());
+      delete indexCpu;
+    }
   }
 
   std::cout << "maxListLength: " << imipqGpu->getMaxListLength() << std::endl;
 
-  std::vector<int> numQueriesList = {1, 1000, 8192, 10000};
-  std::vector<int> nprobeList = {1,  2,   4,   8,   16,   32,
-                                 64, 128, 256, 512, 1024, 2048,
-                                 2194, 2352, 2521, 2702, 2896, 4096,
-                                 8192, 16384, 32768, 65536};
+  if (profile) {
+    std::vector<int> numQueriesList = {1, 1000, 8192, 10000};
+    std::vector<int> nprobeList = {
+        1,    2,    4,    8,    16,   32,   64,   128,  256,   512,   1024,
+        2048, 2194, 2352, 2521, 2702, 2896, 4096, 8192, 16384, 32768, 65536};
 
-  float *queries;
-  if (isVecFloat) {
-    queries = faiss::fvecs_read(fileNameQueries.c_str(),
-                                (size_t)numQueriesList[numQueriesEnd - 1],
-                                queriesOffset, &dRead);
-  } else {
-    queries = faiss::bvecs_read(fileNameQueries.c_str(),
-                                (size_t)numQueriesList[numQueriesEnd - 1],
-                                queriesOffset, &dRead);
-  }
-  assert(d == dRead);
-  int *groundTruth =
-      faiss::ivecs_read(fileNameGroundTruth.c_str(),
-                        numQueriesList[numQueriesEnd - 1], 0, &dRead);
-
-  CUDA_VERIFY(cudaMemGetInfo(&devFree, &devTotal));
-  std::cout << "-------Memory-------" << std::endl;
-  std::cout << "Free: " << devFree << std::endl;
-  std::cout << "Total: " << devTotal << std::endl;
-
-  for (int i = numQueriesBegin > 0 ? numQueriesBegin : 0;
-       i < numQueriesEnd && i < numQueriesList.size(); i++) {
-    int numQueries = numQueriesList[i];
-    std::cout << "numOfQueries: " << numQueries
-              << " ===============" << std::endl;
-    for (int j = nprobeBegin > 0 ? nprobeBegin : 0;
-         j < nprobeEnd && j < nprobeList.size(); j++) {
-      int nprobe = nprobeList[j];
-      std::cout << "nprobe: " << nprobe << "---------" << std::endl;
-      imipqGpu->setNumProbes(nprobe);
-      search(&res, imipqGpu, queries, groundTruth, numQueries, kBegin, kEnd,
-             dRead);
+    float *queries;
+    if (isVecFloat) {
+      queries = faiss::fvecs_read(fileNameQueries.c_str(),
+                                  (size_t)numQueriesList[numQueriesEnd - 1],
+                                  queriesOffset, &dRead);
+    } else {
+      queries = faiss::bvecs_read(fileNameQueries.c_str(),
+                                  (size_t)numQueriesList[numQueriesEnd - 1],
+                                  queriesOffset, &dRead);
     }
+    assert(d == dRead);
+    int *groundTruth =
+        faiss::ivecs_read(fileNameGroundTruth.c_str(),
+                          numQueriesList[numQueriesEnd - 1], 0, &dRead);
+
+    CUDA_VERIFY(cudaMemGetInfo(&devFree, &devTotal));
+    std::cout << "-------Memory-------" << std::endl;
+    std::cout << "Free: " << devFree << std::endl;
+    std::cout << "Total: " << devTotal << std::endl;
+
+    for (int i = numQueriesBegin > 0 ? numQueriesBegin : 0;
+         i < numQueriesEnd && i < numQueriesList.size(); i++) {
+      int numQueries = numQueriesList[i];
+      std::cout << "numOfQueries: " << numQueries
+                << " ===============" << std::endl;
+      for (int j = nprobeBegin > 0 ? nprobeBegin : 0;
+           j < nprobeEnd && j < nprobeList.size(); j++) {
+        int nprobe = nprobeList[j];
+        std::cout << "nprobe: " << nprobe << "---------" << std::endl;
+        imipqGpu->setNumProbes(nprobe);
+        search(&res, imipqGpu, queries, groundTruth, numQueries, kBegin, kEnd,
+               dRead);
+      }
+    }
+    delete queries;
+    delete groundTruth;
   }
-  delete queries;
-  delete groundTruth;
   delete imipqGpu;
 }
 
@@ -397,7 +398,7 @@ int main(int argc, char **argv) {
 
   int d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer, queriesOffset,
       numQueriesBegin, numQueriesEnd, kBegin, kEnd, nprobeBegin, nprobeEnd,
-      isFloat, numThreads;
+      isFloat, numThreads, profile;
   size_t numTrainingVecs, numIndexingVecs;
   std::string fileNameTraining, fileNameIndexing, fileNameQueries,
       fileNameGroundTruth, fileNameCoarseQuantizer, fileNameIndex;
@@ -425,6 +426,7 @@ int main(int argc, char **argv) {
   safeMemMargin = argc > 20 ? std::stoul(argv[20]) : 0;
   fileNameCoarseQuantizer = argc > 21 ? argv[21] : "";
   fileNameIndex = argc > 22 ? argv[22] : "";
+  profile = argc > 23 ? std::stoi(argv[23]) : 1;
 
   omp_set_num_threads(numThreads);
 
@@ -436,14 +438,14 @@ int main(int argc, char **argv) {
                      numIndexingVecs, fileNameQueries, queriesOffset,
                      fileNameGroundTruth, numQueriesBegin, numQueriesEnd,
                      nprobeBegin, nprobeEnd, kBegin, kEnd, safeMemMargin,
-                     fileNameCoarseQuantizer, fileNameIndex);
+                     fileNameCoarseQuantizer, fileNameIndex, profile);
   } else {
-    demo_imipq<false>(d, coarseCodebookSize, numSubQuantizers,
-                      nbitsSubQuantizer, fileNameTraining, numTrainingVecs,
-                      fileNameIndexing, numIndexingVecs, fileNameQueries,
-                      queriesOffset, fileNameGroundTruth, numQueriesBegin,
-                      numQueriesEnd, nprobeBegin, nprobeEnd, kBegin, kEnd,
-                      safeMemMargin, fileNameCoarseQuantizer, fileNameIndex);
+    demo_imipq<false>(
+        d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer,
+        fileNameTraining, numTrainingVecs, fileNameIndexing, numIndexingVecs,
+        fileNameQueries, queriesOffset, fileNameGroundTruth, numQueriesBegin,
+        numQueriesEnd, nprobeBegin, nprobeEnd, kBegin, kEnd, safeMemMargin,
+        fileNameCoarseQuantizer, fileNameIndex, profile);
   }
   return 0;
 }
