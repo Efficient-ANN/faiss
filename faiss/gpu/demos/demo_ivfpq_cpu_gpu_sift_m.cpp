@@ -19,6 +19,7 @@
 #include <faiss/gpu/StandardGpuResources.h>
 #include <faiss/gpu/utils/DeviceUtils.h>
 #include <faiss/gpu/utils/StaticUtils.h>
+#include <faiss/impl/ThreadedIndex.h>
 #include <faiss/index_io.h>
 #include <faiss/utils/vecs_storage.h>
 #include <iomanip>
@@ -136,8 +137,8 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
                 int numQueriesBegin, int numQueriesEnd, int nprobeBegin,
                 int nprobeEnd, int kBegin, int kEnd, bool usePrecomputed,
                 int ngpus, bool useShards, size_t safeMemMargin,
-                std::string fileNameCoarseQuantizer,
-                std::string fileNameIndex) {
+                std::string fileNameCoarseQuantizer, std::string fileNameIndex,
+                bool profile) {
   size_t devFree = 0;
   size_t devTotal = 0;
   constexpr int maxPageSize = 2 * 1024 * 1024; // 2MB
@@ -176,14 +177,14 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
       devFreeLimit -
       faiss::gpu::utils::roundUp(fixedMemSize + 256, (size_t)maxPageSize) -
       ivfStructureMemSize;
-  tempMemory = tempMemory / 256 * 256);
+  tempMemory = tempMemory / 256 * 256;
   std::cout << "tempMemory: " << tempMemory << std::endl;
 
   size_t tempMemoryPerGpu = devFreeLimit -
                             faiss::gpu::utils::roundUp(fixedMemSizePerGpu + 256,
                                                        (size_t)maxPageSize) -
                             ivfStructureMemSize;
-  tempMemoryPerGpu = tempMemoryPerGpu / 256 * 256);
+  tempMemoryPerGpu = tempMemoryPerGpu / 256 * 256;
   std::cout << "tempMemoryPerGpu: " << tempMemoryPerGpu << std::endl;
   // res.noTempMemory();
 
@@ -460,7 +461,7 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
           for (int k = 0; k < threadedIndex->count(); k++) {
             faiss::gpu::GpuIndexIVFPQ *ivfpq =
                 dynamic_cast<faiss::gpu::GpuIndexIVFPQ *>(threadedIndex->at(k));
-            imipqGpu->setNumProbes(nprobe);
+            ivfpq->setNumProbes(nprobe);
           }
         } else {
           // single GPU

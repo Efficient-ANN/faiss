@@ -18,6 +18,7 @@
 #include <faiss/gpu/StandardGpuResources.h>
 #include <faiss/gpu/utils/DeviceUtils.h>
 #include <faiss/gpu/utils/StaticUtils.h>
+#include <faiss/impl/ThreadedIndex.h>
 #include <faiss/index_io.h>
 #include <faiss/utils/vecs_storage.h>
 #include <iomanip>
@@ -171,14 +172,14 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
       devFreeLimit -
       faiss::gpu::utils::roundUp(fixedMemSize + 256, (size_t)maxPageSize) -
       imiStructureMemSize;
-  tempMemory = tempMemory / 256 * 256);
+  tempMemory = tempMemory / 256 * 256;
   std::cout << "tempMemory: " << tempMemory << std::endl;
 
   size_t tempMemoryPerGpu = devFreeLimit -
                             faiss::gpu::utils::roundUp(fixedMemSizePerGpu + 256,
                                                        (size_t)maxPageSize) -
                             imiStructureMemSize;
-  tempMemoryPerGpu = tempMemoryPerGpu / 256 * 256);
+  tempMemoryPerGpu = tempMemoryPerGpu / 256 * 256;
   std::cout << "tempMemoryPerGpu: " << tempMemoryPerGpu << std::endl;
 
   faiss::Index *indexMultiGpu;
