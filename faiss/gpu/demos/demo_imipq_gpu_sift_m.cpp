@@ -131,7 +131,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
                 size_t queriesOffset, std::string fileNameGroundTruth,
                 int numQueriesBegin, int numQueriesEnd, int nprobeBegin,
                 int nprobeEnd, int kBegin, int kEnd, int ngpus, bool useShards,
-                long safeMemMargin, std::string fileNameCoarseQuantizer,
+                size_t safeMemMargin, std::string fileNameCoarseQuantizer,
                 std::string fileNameIndex, bool profile) {
   size_t devFree = 0;
   size_t devTotal = 0;
@@ -156,6 +156,10 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
           numIndexingVecs, numSubQuantizers, nbitsSubQuantizer, false,
           indiceOptions);
   std::cout << "fixedMemSize: " << fixedMemSize << std::endl;
+  std::cout << "fixedMemSize round: "
+            << aiss::gpu::utils::roundUp(fixedMemSize + 256,
+                                         (size_t)maxPageSize)
+            << std::endl;
 
   size_t fixedMemSizePerGpu =
       faiss::gpu::GpuIndexIMIPQv2::calcInvListsMemorySpaceSize(
@@ -166,22 +170,17 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
   size_t imiStructureMemSize = calcImiStructureMemSize(
       d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer, maxPageSize);
   std::cout << "imiStructureMemSize: " << imiStructureMemSize << std::endl;
-
+  std::cout << "safeMemMargin: " << safeMemMargin << std::endl;
+  size_t devFreeLimit = std::min(devFree, safeMemMargin);
+  std::cout << "devFreeLimit: " << devFreeLimit << std::endl;
   size_t tempMemory =
-      devFree -
+      devFreeLimit -
       faiss::gpu::utils::roundUp(fixedMemSize + 256, (size_t)maxPageSize) -
       imiStructureMemSize;
-
-  if (safeMemMargin >= 0) {
-    tempMemory += safeMemMargin;
-  } else {
-    safeMemMargin *= -1;
-    tempMemory -= (size_t)safeMemMargin;
-  }
   tempMemory = tempMemory / 256 * 256;
   std::cout << "tempMemory: " << tempMemory << std::endl;
 
-  size_t tempMemoryPerGpu = devFree -
+  size_t tempMemoryPerGpu = devFreeLimit -
                             faiss::gpu::utils::roundUp(fixedMemSizePerGpu + 256,
                                                        (size_t)maxPageSize) -
                             imiStructureMemSize;
@@ -475,7 +474,7 @@ int main(int argc, char **argv) {
   size_t numTrainingVecs, numIndexingVecs;
   std::string fileNameTraining, fileNameIndexing, fileNameQueries,
       fileNameGroundTruth, fileNameCoarseQuantizer, fileNameIndex;
-  long safeMemMargin;
+  size_t safeMemMargin;
 
   d = std::stoi(argv[1]);
   coarseCodebookSize = std::stoi(argv[2]);
@@ -498,7 +497,7 @@ int main(int argc, char **argv) {
   numThreads = argc > 19 ? std::stoi(argv[19]) : 1;
   ngpus = argc > 20 ? std::stoi(argv[20]) : 2;
   useShards = argc > 21 ? std::stoi(argv[21]) : 0;
-  safeMemMargin = argc > 22 ? std::stol(argv[22]) : 0;
+  safeMemMargin = argc > 22 ? std::stoul(argv[22]) : 0;
   fileNameCoarseQuantizer = argc > 23 ? argv[23] : "";
   fileNameIndex = argc > 24 ? argv[24] : "";
   profile = argc > 25 ? std::stoi(argv[25]) : 1;

@@ -111,7 +111,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
                 size_t numIndexingVecs, std::string fileNameQueries,
                 size_t queriesOffset, std::string fileNameGroundTruth,
                 int numQueriesBegin, int numQueriesEnd, int nprobeBegin,
-                int nprobeEnd, int kBegin, int kEnd, long safeMemMargin,
+                int nprobeEnd, int kBegin, int kEnd, size_t safeMemMargin,
                 std::string fileNameCoarseQuantizer,
                 std::string fileNameIndex) {
   size_t devFree = 0;
@@ -140,17 +140,11 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
   std::cout << "imiStructureMemSize: " << imiStructureMemSize << std::endl;
 
   faiss::gpu::StandardGpuResources res(fixedMemSize);
+  size_t devFreeLimit = std::min(devFree, safeMemMargin);
   size_t tempMemory =
-      devFree -
+      devFreeLimit -
       faiss::gpu::utils::roundUp(fixedMemSize + 256, (size_t)maxPageSize) -
       imiStructureMemSize;
-
-  if (safeMemMargin >= 0) {
-    tempMemory += safeMemMargin;
-  } else {
-    safeMemMargin *= -1;
-    tempMemory -= (size_t)safeMemMargin;
-  }
 
   res.setTempMemory(tempMemory / 256 * 256);
   std::cout << "tempMemory: " << tempMemory << std::endl;
@@ -378,7 +372,7 @@ int main(int argc, char **argv) {
   size_t numTrainingVecs, numIndexingVecs;
   std::string fileNameTraining, fileNameIndexing, fileNameQueries,
       fileNameGroundTruth, fileNameCoarseQuantizer, fileNameIndex;
-  long safeMemMargin;
+  size_t safeMemMargin;
 
   d = std::stoi(argv[1]);
   coarseCodebookSize = std::stoi(argv[2]);
@@ -399,7 +393,7 @@ int main(int argc, char **argv) {
   kEnd = std::stoi(argv[17]);
   isFloat = std::stoi(argv[18]);
   numThreads = argc > 19 ? std::stoi(argv[19]) : 1;
-  safeMemMargin = argc > 20 ? std::stol(argv[20]) : 0;
+  safeMemMargin = argc > 20 ? std::stoul(argv[20]) : 0;
   fileNameCoarseQuantizer = argc > 21 ? argv[21] : "";
   fileNameIndex = argc > 22 ? argv[22] : "";
 

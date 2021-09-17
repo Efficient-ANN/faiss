@@ -171,7 +171,6 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
       d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer, maxPageSize);
   std::cout << "imiStructureMemSize: " << imiStructureMemSize << std::endl;
   std::cout << "safeMemMargin: " << safeMemMargin << std::endl;
-
   size_t devFreeLimit = std::min(devFree, safeMemMargin);
   std::cout << "devFreeLimit: " << devFreeLimit << std::endl;
   size_t tempMemory =
