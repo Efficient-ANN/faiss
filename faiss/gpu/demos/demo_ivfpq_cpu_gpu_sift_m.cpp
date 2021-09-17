@@ -161,6 +161,10 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
       numIndexingVecs, numSubQuantizers, nbitsSubQuantizer, false,
       indiceOptions);
   std::cout << "fixedMemSize: " << fixedMemSize << std::endl;
+  std::cout << "fixedMemSize round: "
+            << faiss::gpu::utils::roundUp(fixedMemSize + 256,
+                                          (size_t)maxPageSize)
+            << std::endl;
 
   size_t fixedMemSizePerGpu =
       faiss::gpu::GpuIndexIVFPQ::calcInvListsMemorySpaceSize(
@@ -172,7 +176,9 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
       d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer, maxPageSize);
   std::cout << "ivfStructureMemSize: " << ivfStructureMemSize << std::endl;
 
+  std::cout << "safeMemMargin: " << safeMemMargin << std::endl;
   size_t devFreeLimit = std::min(devFree, safeMemMargin);
+  std::cout << "devFreeLimit: " << devFreeLimit << std::endl;
   size_t tempMemory =
       devFreeLimit -
       faiss::gpu::utils::roundUp(fixedMemSize + 256, (size_t)maxPageSize) -
@@ -519,13 +525,13 @@ int main(int argc, char **argv) {
   kEnd = std::stoi(argv[17]);
   isFloat = std::stoi(argv[18]);
   usePrecomputed = argc > 19 ? std::stoi(argv[19]) : 1;
-  numThreads = argc > 21 ? std::stoi(argv[21]) : 1;
-  ngpus = argc > 22 ? std::stoi(argv[22]) : 2;
-  useShards = argc > 23 ? std::stoi(argv[23]) : 0;
-  safeMemMargin = argc > 24 ? std::stoul(argv[24]) : 0;
-  fileNameCoarseQuantizer = argc > 25 ? argv[25] : "";
-  fileNameIndex = argc > 26 ? argv[26] : "";
-  profile = argc > 27 ? std::stoi(argv[27]) : 1;
+  numThreads = argc > 20 ? std::stoi(argv[20]) : 1;
+  ngpus = argc > 21 ? std::stoi(argv[21]) : 2;
+  useShards = argc > 22 ? std::stoi(argv[22]) : 0;
+  safeMemMargin = argc > 23 ? std::stoul(argv[23]) : 0;
+  fileNameCoarseQuantizer = argc > 24 ? argv[24] : "";
+  fileNameIndex = argc > 25 ? argv[25] : "";
+  profile = argc > 26 ? std::stoi(argv[26]) : 1;
 
   omp_set_num_threads(numThreads);
 
