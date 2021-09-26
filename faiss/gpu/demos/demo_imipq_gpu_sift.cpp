@@ -134,13 +134,19 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
           numIndexingVecs, numSubQuantizers, nbitsSubQuantizer, false,
           indiceOptions);
   std::cout << "fixedMemSize: " << fixedMemSize << std::endl;
+  std::cout << "fixedMemSize round: "
+            << faiss::gpu::utils::roundUp(fixedMemSize + 256,
+                                          (size_t)maxPageSize)
+            << std::endl;
 
   size_t imiStructureMemSize = calcImiStructureMemSize(
       d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer, maxPageSize);
   std::cout << "imiStructureMemSize: " << imiStructureMemSize << std::endl;
+  std::cout << "safeMemMargin: " << safeMemMargin << std::endl;
 
   faiss::gpu::StandardGpuResources res(fixedMemSize);
   size_t devFreeLimit = std::min(devFree, safeMemMargin);
+  std::cout << "devFreeLimit: " << devFreeLimit << std::endl;
   size_t tempMemory =
       devFreeLimit -
       faiss::gpu::utils::roundUp(fixedMemSize + 256, (size_t)maxPageSize) -
@@ -168,7 +174,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
     if (f) {
       fclose(f);
 
-      faiss::IndexIVFPQ *indexCpu = dynamic_cast<faiss::IndexIVFPQ *>(
+      faiss::IndexIVFPQ *preBuildIndexCpu = dynamic_cast<faiss::IndexIVFPQ *>(
           faiss::read_index(fileNameIndex.c_str()));
 
       faiss::gpu::GpuClonerOptions options;
@@ -177,10 +183,10 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
       options.usePrecomputed = config.usePrecomputedTables;
 
       imipqGpu = dynamic_cast<faiss::gpu::GpuIndexIMIPQv2 *>(
-          faiss::gpu::index_cpu_to_gpu(&res, config.device, indexCpu,
+          faiss::gpu::index_cpu_to_gpu(&res, config.device, preBuildIndexCpu,
                                        &options));
 
-      delete indexCpu;
+      delete preBuildIndexCpu;
 
       isLoadead = true;
     }

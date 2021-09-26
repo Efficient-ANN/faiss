@@ -169,7 +169,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
     if (f) {
       fclose(f);
 
-      faiss::IndexIVFPQ *indexCpu = dynamic_cast<faiss::IndexIVFPQ *>(
+      faiss::IndexIVFPQ *preBuildIndexCpu = dynamic_cast<faiss::IndexIVFPQ *>(
           faiss::read_index(fileNameIndex.c_str()));
 
       faiss::gpu::GpuClonerOptions options;
@@ -179,10 +179,10 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
       options.precomputeCodesOnCpu = config.precomputeCodesOnCpu;
 
       imipqGpu = dynamic_cast<faiss::gpu::GpuIndexIMIPQv2 *>(
-          faiss::gpu::index_cpu_to_gpu(&res, config.device, indexCpu,
+          faiss::gpu::index_cpu_to_gpu(&res, config.device, preBuildIndexCpu,
                                        &options));
 
-      delete indexCpu;
+      delete preBuildIndexCpu;
 
       isLoadead = true;
     }
@@ -199,11 +199,11 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
         FILE *f = fopen(fileNameCoarseQuantizer.c_str(), "rb");
         if (f) {
           fclose(f);
-          faiss::MultiIndexQuantizer *indexCpu =
+          faiss::MultiIndexQuantizer *preBuilcCoarIndexCpu =
               dynamic_cast<faiss::MultiIndexQuantizer *>(
                   faiss::read_index(fileNameCoarseQuantizer.c_str()));
-          imipqGpu->quantizer->copyFrom(indexCpu);
-          delete indexCpu;
+          imipqGpu->quantizer->copyFrom(preBuilcCoarIndexCpu);
+          delete preBuilcCoarIndexCpu;
           storeCoarseQuantizer = false;
         }
       }
@@ -225,13 +225,13 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
       delete trainingVecs;
 
       if (storeCoarseQuantizer) {
-        faiss::Index *indexCpu =
+        faiss::Index *coarseIndexCpu =
             faiss::gpu::index_gpu_to_cpu(imipqGpu->quantizer);
         faiss::gpu::CudaEvent cloneEnd(
             res.getResources()->getDefaultStreamCurrentDevice());
         cloneEnd.cpuWaitOnEvent();
-        faiss::write_index(indexCpu, fileNameCoarseQuantizer.c_str());
-        delete indexCpu;
+        faiss::write_index(coarseIndexCpu, fileNameCoarseQuantizer.c_str());
+        delete coarseIndexCpu;
       }
     }
 
