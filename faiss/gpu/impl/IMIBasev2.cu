@@ -207,10 +207,14 @@ std::vector<Index::idx_t> IMIBasev2::getListIndices(int listId) {
     return std::vector<Index::idx_t>();
   }
 
-  auto stream = resources_->getDefaultStreamCurrentDevice();
-  int listOffset = getListOffset(listId);
   int listLength = getListLength(listId);
 
+  if (listLength == 0) {
+    return std::vector<Index::idx_t>();
+  }
+
+  int listOffset = getListOffset(listId);
+  auto stream = resources_->getDefaultStreamCurrentDevice();
   if (indicesOptions_ == INDICES_32_BIT) {
     std::vector<int> intInd(listLength);
     fromDevice<int>((int *)deviceListIndices_.data() + listOffset,
@@ -257,13 +261,18 @@ std::vector<uint8_t> IMIBasev2::getListVectorData(int listId, bool gpuFormat) {
     return std::vector<uint8_t>();
   }
 
-  auto stream = resources_->getDefaultStreamCurrentDevice();
+  int listLength = getListLength(listId);
+
+  if (listLength == 0) {
+    return std::vector<uint8_t>();
+  }
+
+  int listLengthNumBytes = getGpuVectorsEncodingSize_(listLength);
   int listOffset = getListOffset(listId);
   int listOffsetNumBytes = getGpuVectorsEncodingSize_(listOffset);
-  int listLength = getListLength(listId);
-  int listLengthNumBytes = getGpuVectorsEncodingSize_(listLength);
 
   std::vector<uint8_t> gpuCodes(listLengthNumBytes);
+  auto stream = resources_->getDefaultStreamCurrentDevice();
   fromDevice<uint8_t>(deviceListData_.data() + listOffsetNumBytes,
                       gpuCodes.data(), listLengthNumBytes, stream);
   CudaEvent copyEnd(resources_->getDefaultStreamCurrentDevice());

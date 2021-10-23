@@ -376,8 +376,8 @@ void testSearchPrecomputedCodes(int d, int numSubQuantizers, int bitsPerCode,
 
   int subCodebookSize = 1 << bitsPerCode;
 
-  std::vector<int> coarseCodebookSizeList = {1, 2, 4};
-  std::vector<int> numOfIndexList = {1, 10, 4096};
+  std::vector<int> coarseCodebookSizeList = {1, 2, 4, 4};
+  std::vector<int> numOfIndexList = {1, 10, 4096, 1};
   for (int param1Idx = 0; param1Idx < coarseCodebookSizeList.size();
        param1Idx++) {
     int coarseCodebookSize = coarseCodebookSizeList[param1Idx];
