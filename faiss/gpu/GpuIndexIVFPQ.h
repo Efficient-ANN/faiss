@@ -75,6 +75,10 @@ class GpuIndexIVFPQ : public GpuIndexIVF {
 
   ~GpuIndexIVFPQ() override;
 
+  static std::unordered_map<AllocType, size_t> getInvListsAllocSizePerTypeInfo(
+      int numVecs, int numSubQuantizers, int bitsPerSubQuantizer,
+      bool interleavedLayout, IndicesOptions options);
+
   static size_t calcInvListsMemorySpaceSize(int numVecs, int numSubQuantizers,
                                             int bitsPerSubQuantizer,
                                             bool interleavedLayout,

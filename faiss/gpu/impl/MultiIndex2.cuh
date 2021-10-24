@@ -9,8 +9,10 @@
 
 #include <faiss/Index.h>
 #include <faiss/gpu/GpuResources.h>
+#include <faiss/gpu/StandardGpuResources.h>
 #include <faiss/gpu/utils/DeviceTensor.cuh>
 #include <faiss/gpu/utils/DeviceVector.cuh>
+#include <unordered_map>
 
 namespace faiss {
 namespace gpu {
@@ -24,6 +26,10 @@ public:
   // numVecsTotal: NUM_CODEBOOKS * numCentroidsPerCodebook_
   static size_t calcMemorySpaceSize(int numVecsTotal, int dimPerCodebook,
                                     bool useFloat16);
+
+  static std::unordered_map<AllocType, size_t>
+  getAllocSizePerTypeInfo(int numVecsTotal, int dimPerCodebook,
+                          bool useFloat16);
 
   bool getUseFloat16() const;
 

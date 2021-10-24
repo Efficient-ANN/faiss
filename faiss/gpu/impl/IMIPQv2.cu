@@ -127,6 +127,17 @@ size_t IMIPQv2::calcMemorySpaceSize(int numVecs, int numSubQuantizers,
          calcIndicesMemorySpaceSize(numVecs, options);
 }
 
+std::unordered_map<AllocType, size_t> IMIPQv2::getAllocSizePerTypeInfo(
+    int numVecs, int numSubQuantizers, int bitsPerSubQuantizer,
+    bool interleavedLayout, IndicesOptions options) {
+  std::unordered_map<AllocType, size_t> allocSizePerType;
+  allocSizePerType[AllocType::InvListData] = calcVectorsEncodingMemorySpaceSize(
+      numVecs, numSubQuantizers, bitsPerSubQuantizer, interleavedLayout);
+  allocSizePerType[AllocType::InvListIndices] =
+      calcIndicesMemorySpaceSize(numVecs, options);
+  return allocSizePerType;
+}
+
 void IMIPQv2::movePrecomputedCodesFrom(
     DeviceTensor<float, 3, true> &precomputedCode) {
   FAISS_ASSERT(precomputedCode.getSize(0) == quantizer_->getCodebookSize());

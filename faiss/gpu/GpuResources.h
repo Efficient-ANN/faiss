@@ -56,6 +56,12 @@ enum AllocType {
   TemporaryMemoryOverflow = 11,
 
   FixedMemoryOverflow = 12,
+
+  InvListData = 13,
+  
+  InvListIndices = 14,
+
+  CoarseQuantizer = 15
 };
 
 /// Convert an AllocType to string

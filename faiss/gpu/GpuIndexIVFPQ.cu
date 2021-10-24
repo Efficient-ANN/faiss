@@ -66,6 +66,17 @@ GpuIndexIVFPQ::GpuIndexIVFPQ(GpuResourcesProvider* provider,
 GpuIndexIVFPQ::~GpuIndexIVFPQ() {
 }
 
+std::unordered_map<AllocType, size_t>
+GpuIndexIVFPQ::getInvListsAllocSizePerTypeInfo(int numVecs,
+                                               int numSubQuantizers,
+                                               int bitsPerSubQuantizer,
+                                               bool interleavedLayout,
+                                               IndicesOptions options) {
+  return IVFPQ::getAllocSizePerTypeInfo(numVecs, numSubQuantizers,
+                                        bitsPerSubQuantizer, interleavedLayout,
+                                        options);
+}
+
 size_t GpuIndexIVFPQ::calcInvListsMemorySpaceSize(int numVecs,
                                                   int numSubQuantizers,
                                                   int bitsPerSubQuantizer,

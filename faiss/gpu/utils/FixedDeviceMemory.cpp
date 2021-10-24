@@ -7,6 +7,7 @@
 
 #include <faiss/gpu/utils/DeviceUtils.h>
 #include <faiss/gpu/utils/FixedDeviceMemory.h>
+#include <faiss/gpu/utils/StaticUtils.h>
 #include <faiss/impl/FaissAssert.h>
 #include <sstream>
 
@@ -21,8 +22,15 @@ FixedDeviceMemory::FixedDeviceMemory(GpuResources *res, int device,
     return;
   }
 
+  // ensures this memory block is aligned to CUDA pre-requisites for read/write
+  allocSize_ = utils::roundUp(allocSize_, (size_t)256);
+
   allocSize_ += 256;
+
+  // the first address is the address of the entire block, so it can't be the
+  // address of a sub-block within the block
   offset_ += 256;
+
   DeviceScope s(device_);
   auto defaultStream = res_->getDefaultStream(device_);
   auto req =

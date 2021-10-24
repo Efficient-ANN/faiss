@@ -23,8 +23,8 @@ namespace gpu {
 MultiIndex2::MultiIndex2(GpuResources *res, int dim, MemorySpace space)
     : resources_(res), space_(space), numCodebooks_(2),
       dimPerCodebook_(dim / numCodebooks_), numCentroidsPerCodebook_(0),
-      rawData_(res, AllocInfo(AllocType::FlatData, getCurrentDevice(), space,
-                              res->getDefaultStreamCurrentDevice())) {
+      rawData_(res, AllocInfo(AllocType::CoarseQuantizer, getCurrentDevice(),
+                              space, res->getDefaultStreamCurrentDevice())) {
   FAISS_ASSERT(dim % numCodebooks_ == 0);
 }
 
@@ -38,6 +38,15 @@ size_t MultiIndex2::calcMemorySpaceSize(int numVecsTotal, int dimPerCodebook,
 
   return (size_t)numVecsTotal * dimPerCodebook * sizeof(half) +
          normMemorySpaceSize;
+}
+
+std::unordered_map<AllocType, size_t>
+MultiIndex2::getAllocSizePerTypeInfo(int numVecsTotal, int dimPerCodebook,
+                                     bool useFloat16) {
+  std::unordered_map<AllocType, size_t> allocSizePerType;
+  allocSizePerType[AllocType::CoarseQuantizer] =
+      calcMemorySpaceSize(numVecsTotal, dimPerCodebook, useFloat16);
+  return allocSizePerType;
 }
 
 bool MultiIndex2::getUseFloat16() const { return false; }

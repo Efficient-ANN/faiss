@@ -124,29 +124,28 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
   std::cout << "Total: " << devTotal << std::endl;
 
   faiss::gpu::IndicesOptions indiceOptions = faiss::gpu::INDICES_32_BIT;
-  /*
-  size_t fixedMemSize = faiss::gpu::GpuIndexIMIPQv2::calcMemorySpaceSize(
-      coarseCodebookSize * 2, d / 2, false, numIndexingVecs, numSubQuantizers,
-      nbitsSubQuantizer, false, indiceOptions);
-  */
-  size_t fixedMemSize =
-      faiss::gpu::GpuIndexIMIPQv2::calcInvListsMemorySpaceSize(
+  size_t fixedMemSize = 0;
+  auto allocSizePerTypeMap =
+      faiss::gpu::GpuIndexIMIPQv2::getInvListsAllocSizePerTypeInfo(
           numIndexingVecs, numSubQuantizers, nbitsSubQuantizer, false,
           indiceOptions);
-  std::cout << "fixedMemSize: " << fixedMemSize << std::endl;
+  for (auto &&allocSizePerType : allocSizePerTypeMap) {
+    size_t allocSize =
+        faiss::gpu::utils::roundUp(allocSizePerType.second, (size_t)256);
+    fixedMemSize += faiss::gpu::utils::roundUp(allocSize, (size_t)maxPageSize);
+  }
 
   size_t imiStructureMemSize = calcImiStructureMemSize(
       d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer, maxPageSize);
-  std::cout << "imiStructureMemSize: " << imiStructureMemSize << std::endl;
 
-  faiss::gpu::StandardGpuResources res(fixedMemSize);
   size_t devFreeLimit = std::min(devFree, safeMemMargin);
-  size_t tempMemory =
-      devFreeLimit -
-      faiss::gpu::utils::roundUp(fixedMemSize + 256, (size_t)maxPageSize) -
-      imiStructureMemSize;
+  size_t tempMemory = devFreeLimit - fixedMemSize - imiStructureMemSize;
 
+  faiss::gpu::StandardGpuResources res(allocSizePerTypeMap);
   res.setTempMemory(tempMemory / 256 * 256);
+
+  std::cout << "fixedMemSize: " << fixedMemSize << std::endl;
+  std::cout << "imiStructureMemSize: " << imiStructureMemSize << std::endl;
   std::cout << "tempMemory: " << tempMemory << std::endl;
   // res.noTempMemory();
 
@@ -337,7 +336,9 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
       faiss::gpu::CudaEvent cloneEnd(
           res.getResources()->getDefaultStreamCurrentDevice());
       cloneEnd.cpuWaitOnEvent();
+      std::cout << "writing: " << fileNameIndex << "...";
       faiss::write_index(indexCpu, fileNameIndex.c_str());
+      std::cout << "done" << std::endl;
       delete indexCpu;
     }
   }

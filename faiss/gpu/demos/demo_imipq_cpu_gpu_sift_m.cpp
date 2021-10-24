@@ -111,12 +111,15 @@ size_t calcImiStructureMemSize(size_t d, size_t coarseCodebookSize,
 }
 
 void initResourcesMultiGpu(
-    int ngpus, size_t fixedMemSize, size_t tempMemory,
+    int ngpus,
+    std::unordered_map<faiss::gpu::AllocType, size_t>
+        &allocSizePerTypeMapPerGpu,
+    size_t tempMemory,
     std::vector<faiss::gpu::GpuResourcesProvider *> &resVector,
     std::vector<int> &devs) {
   for (int i = 0; i < ngpus; i++) {
     faiss::gpu::StandardGpuResources *res;
-    res = new faiss::gpu::StandardGpuResources(fixedMemSize);
+    res = new faiss::gpu::StandardGpuResources(allocSizePerTypeMapPerGpu);
     res->setTempMemory(tempMemory);
     resVector.push_back(res);
     devs.push_back(i);
@@ -151,41 +154,51 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
   std::cout << "Total: " << devTotal << std::endl;
 
   faiss::gpu::IndicesOptions indiceOptions = faiss::gpu::INDICES_32_BIT;
-  size_t fixedMemSize =
-      faiss::gpu::GpuIndexIMIPQv2::calcInvListsMemorySpaceSize(
+
+  size_t fixedMemSize = 0;
+  auto allocSizePerTypeMap =
+      faiss::gpu::GpuIndexIMIPQv2::getInvListsAllocSizePerTypeInfo(
           numIndexingVecs, numSubQuantizers, nbitsSubQuantizer, false,
           indiceOptions);
-  std::cout << "fixedMemSize: " << fixedMemSize << std::endl;
-  std::cout << "fixedMemSize round: "
-            << faiss::gpu::utils::roundUp(fixedMemSize + 256,
-                                         (size_t)maxPageSize)
-            << std::endl;
 
-  size_t fixedMemSizePerGpu =
-      faiss::gpu::GpuIndexIMIPQv2::calcInvListsMemorySpaceSize(
+  for (auto &&allocSizePerType : allocSizePerTypeMap) {
+    size_t allocSize =
+        faiss::gpu::utils::roundUp(allocSizePerType.second, (size_t)256);
+    fixedMemSize += faiss::gpu::utils::roundUp(allocSize, (size_t)maxPageSize);
+  }
+
+  size_t fixedMemSizePerGpu = 0;
+  auto allocSizePerTypeMapPerGpu =
+      faiss::gpu::GpuIndexIMIPQv2::getInvListsAllocSizePerTypeInfo(
           numIndexingVecsPerGpu, numSubQuantizers, nbitsSubQuantizer, false,
           indiceOptions);
-  std::cout << "fixedMemSizePerGpu: " << fixedMemSizePerGpu << std::endl;
+
+  for (auto &&allocSizePerType : allocSizePerTypeMapPerGpu) {
+    size_t allocSize =
+        faiss::gpu::utils::roundUp(allocSizePerType.second, (size_t)256);
+    fixedMemSizePerGpu +=
+        faiss::gpu::utils::roundUp(allocSize, (size_t)maxPageSize);
+  }
 
   size_t imiStructureMemSize = calcImiStructureMemSize(
       d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer, maxPageSize);
+
+  size_t devFreeLimit = std::min(devFree, safeMemMargin);
+
+  size_t tempMemory = devFreeLimit - fixedMemSize - imiStructureMemSize;
+  tempMemory = tempMemory / 256 * 256;
+
+  size_t tempMemoryPerGpu =
+      devFreeLimit - fixedMemSizePerGpu - imiStructureMemSize;
+  tempMemoryPerGpu = tempMemoryPerGpu / 256 * 256;
+
+  std::cout << "tempMemoryPerGpu: " << tempMemoryPerGpu << std::endl;
+  std::cout << "fixedMemSize: " << fixedMemSize << std::endl;
+  std::cout << "fixedMemSizePerGpu: " << fixedMemSizePerGpu << std::endl;
   std::cout << "imiStructureMemSize: " << imiStructureMemSize << std::endl;
   std::cout << "safeMemMargin: " << safeMemMargin << std::endl;
-  size_t devFreeLimit = std::min(devFree, safeMemMargin);
   std::cout << "devFreeLimit: " << devFreeLimit << std::endl;
-  size_t tempMemory =
-      devFreeLimit -
-      faiss::gpu::utils::roundUp(fixedMemSize + 256, (size_t)maxPageSize) -
-      imiStructureMemSize;
-  tempMemory = tempMemory / 256 * 256;
   std::cout << "tempMemory: " << tempMemory << std::endl;
-
-  size_t tempMemoryPerGpu = devFreeLimit -
-                            faiss::gpu::utils::roundUp(fixedMemSizePerGpu + 256,
-                                                       (size_t)maxPageSize) -
-                            imiStructureMemSize;
-  tempMemoryPerGpu = tempMemoryPerGpu / 256 * 256;
-  std::cout << "tempMemoryPerGpu: " << tempMemoryPerGpu << std::endl;
 
   faiss::Index *indexMultiGpu;
   faiss::gpu::GpuIndexIMIPQConfig config;
@@ -218,7 +231,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
       options.shard = useShards;
       options.shard_type = 1;
 
-      initResourcesMultiGpu(ngpus, fixedMemSizePerGpu, tempMemoryPerGpu,
+      initResourcesMultiGpu(ngpus, allocSizePerTypeMapPerGpu, tempMemoryPerGpu,
                             resVector, devs);
 
       indexMultiGpu = faiss::gpu::index_cpu_to_gpu_multiple(
@@ -232,7 +245,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
   if (!isLoadead) {
     faiss::Index *indexCpu = nullptr;
     { // indexing
-      faiss::gpu::StandardGpuResources res(fixedMemSize);
+      faiss::gpu::StandardGpuResources res(allocSizePerTypeMap);
       res.setTempMemory(tempMemory);
       faiss::gpu::GpuIndexIMIPQv2 *imipqGpu;
       imipqGpu = new faiss::gpu::GpuIndexIMIPQv2(&res, d, coarseCodebookSize,
@@ -393,7 +406,9 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
     }
 
     if (!fileNameIndex.empty()) {
+      std::cout << "writing: " << fileNameIndex << "...";
       faiss::write_index(indexCpu, fileNameIndex.c_str());
+      std::cout << "done" << std::endl;
     }
 
     faiss::gpu::GpuMultipleClonerOptions options;
@@ -404,12 +419,14 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
     options.shard = useShards;
     options.shard_type = 1;
 
-    initResourcesMultiGpu(ngpus, fixedMemSizePerGpu, tempMemoryPerGpu,
+    std::cout << "Ininting resource for multiple GPUs" << std::endl;
+    initResourcesMultiGpu(ngpus, allocSizePerTypeMapPerGpu, tempMemoryPerGpu,
                           resVector, devs);
 
+    std::cout << "Moving index from cpu to multiple GPUs: " << std::endl;
     indexMultiGpu = faiss::gpu::index_cpu_to_gpu_multiple(resVector, devs,
                                                           indexCpu, &options);
-
+    std::cout << "Index moved" << std::endl;
     delete indexCpu;
   }
 

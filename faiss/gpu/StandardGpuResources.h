@@ -5,27 +5,28 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-
 #pragma once
 
 #include <faiss/gpu/GpuResources.h>
+#include <faiss/gpu/utils/DeviceUtils.h>
 #include <faiss/gpu/utils/FixedDeviceMemory.h>
 #include <faiss/gpu/utils/StackDeviceMemory.h>
-#include <faiss/gpu/utils/DeviceUtils.h>
 #include <functional>
 #include <map>
 #include <unordered_map>
 #include <vector>
 
-namespace faiss { namespace gpu {
+namespace faiss {
+namespace gpu {
 
 /// Standard implementation of the GpuResources object that provides for a
 /// temporary memory manager
 class StandardGpuResourcesImpl : public GpuResources {
- public:
+public:
   StandardGpuResourcesImpl();
 
-  StandardGpuResourcesImpl(size_t fixedMemSize);
+  StandardGpuResourcesImpl(
+      const std::unordered_map<AllocType, size_t> &allocSizePerTypeMap);
 
   ~StandardGpuResourcesImpl() override;
 
@@ -69,7 +70,7 @@ class StandardGpuResourcesImpl : public GpuResources {
   /// standard output
   void setLogMemoryAllocations(bool enable);
 
- public:
+public:
   /// Internal system calls
 
   /// Initialize resources for this device
@@ -80,10 +81,10 @@ class StandardGpuResourcesImpl : public GpuResources {
   std::vector<cudaStream_t> getAlternateStreams(int device) override;
 
   /// Allocate non-temporary GPU memory
-  void* allocMemory(const AllocRequest& req) override;
+  void *allocMemory(const AllocRequest &req) override;
 
   /// Returns a previous allocation
-  void deallocMemory(int device, void* in) override;
+  void deallocMemory(int device, void *in) override;
 
   size_t getTempMemoryAvailable(int device) const override;
 
@@ -91,11 +92,11 @@ class StandardGpuResourcesImpl : public GpuResources {
   std::map<int, std::map<std::string, std::pair<int, size_t>>>
   getMemoryInfo() const;
 
-  std::pair<void*, size_t> getPinnedMemory() override;
+  std::pair<void *, size_t> getPinnedMemory() override;
 
   cudaStream_t getAsyncCopyStream(int device) override;
 
- private:
+private:
   /// Have GPU resources been initialized for this device yet?
   bool isInitialized(int device) const;
 
@@ -103,16 +104,18 @@ class StandardGpuResourcesImpl : public GpuResources {
   /// memory size
   static size_t getDefaultTempMemForGPU(int device, size_t requested);
 
- private:
+private:
   /// Set of currently outstanding memory allocations per device
   /// device -> (alloc request, allocated ptr)
-  std::unordered_map<int, std::unordered_map<void*, AllocRequest>> allocs_;
+  std::unordered_map<int, std::unordered_map<void *, AllocRequest>> allocs_;
 
   /// Temporary memory provider, per each device
   std::unordered_map<int, std::unique_ptr<StackDeviceMemory>> tempMemory_;
 
-  /// Fixed memory provider, per each device
-  std::unordered_map<int, std::unique_ptr<FixedDeviceMemory>> fixedMemory_;
+  /// Pre-defined alloc memory provider, per alloc type, per each device
+  std::unordered_map<
+      int, std::unordered_map<AllocType, std::unique_ptr<FixedDeviceMemory>>>
+      allocPerTypeMap_;
 
   /// Our default stream that work is ordered on, one per each device
   std::unordered_map<int, cudaStream_t> defaultStreams_;
@@ -131,14 +134,14 @@ class StandardGpuResourcesImpl : public GpuResources {
   std::unordered_map<int, cublasHandle_t> blasHandles_;
 
   /// Pinned memory allocation for use with this GPU
-  void* pinnedMemAlloc_;
+  void *pinnedMemAlloc_;
   size_t pinnedMemAllocSize_;
 
   /// Another option is to use a specified amount of memory on all
   /// devices
   size_t tempMemSize_;
 
-  size_t fixedMemSize_;
+  std::unordered_map<AllocType, size_t> allocSizePerTypeMap_;
 
   /// Amount of pinned memory we should allocate
   size_t pinnedMemSize_;
@@ -152,9 +155,10 @@ class StandardGpuResourcesImpl : public GpuResources {
 /// Internally, the Faiss GPU code uses the instance managed by getResources,
 /// but this is the user-facing object that is internally reference counted.
 class StandardGpuResources : public GpuResourcesProvider {
- public:
+public:
   StandardGpuResources();
-  StandardGpuResources(size_t fixedMemSize);
+  StandardGpuResources(
+      const std::unordered_map<AllocType, size_t> &allocSizePerTypeMap);
   ~StandardGpuResources() override;
 
   std::shared_ptr<GpuResources> getResources() override;
@@ -206,8 +210,9 @@ class StandardGpuResources : public GpuResourcesProvider {
   /// standard output
   void setLogMemoryAllocations(bool enable);
 
- private:
+private:
   std::shared_ptr<StandardGpuResourcesImpl> res_;
 };
 
-} } // namespace
+} // namespace gpu
+} // namespace faiss

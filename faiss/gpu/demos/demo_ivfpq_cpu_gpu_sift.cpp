@@ -130,28 +130,30 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
   std::cout << "Total: " << devTotal << std::endl;
 
   faiss::gpu::IndicesOptions indiceOptions = faiss::gpu::INDICES_32_BIT;
-  /*
-  size_t fixedMemSize = faiss::gpu::GpuIndexIVFPQ::calcMemorySpaceSize(
-      coarseCodebookSize, d, false, numIndexingVecs, numSubQuantizers,
-      nbitsSubQuantizer, false, indiceOptions);
-  */
-  size_t fixedMemSize = faiss::gpu::GpuIndexIVFPQ::calcInvListsMemorySpaceSize(
-      numIndexingVecs, numSubQuantizers, nbitsSubQuantizer, false,
-      indiceOptions);
-  std::cout << "fixedMemSize: " << fixedMemSize << std::endl;
 
+  size_t fixedMemSize = 0;
+  auto allocSizePerTypeMap =
+      faiss::gpu::GpuIndexIVFPQ::getInvListsAllocSizePerTypeInfo(
+          numIndexingVecs, numSubQuantizers, nbitsSubQuantizer, false,
+          indiceOptions);
+
+  for (auto &&allocSizePerType : allocSizePerTypeMap) {
+    size_t allocSize =
+        faiss::gpu::utils::roundUp(allocSizePerType.second, (size_t)256);
+    fixedMemSize += faiss::gpu::utils::roundUp(allocSize, (size_t)maxPageSize);
+  }
   size_t ivfStructureMemSize = calcIvfStructureMemSize(
       d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer, maxPageSize);
-  std::cout << "ivfStructureMemSize: " << ivfStructureMemSize << std::endl;
 
-  faiss::gpu::StandardGpuResources res(fixedMemSize);
+  faiss::gpu::StandardGpuResources res(allocSizePerTypeMap);
   size_t devFreeLimit = std::min(devFree, safeMemMargin);
-  size_t tempMemory =
-      devFreeLimit -
-      faiss::gpu::utils::roundUp(fixedMemSize + 256, (size_t)maxPageSize) -
-      ivfStructureMemSize;
+  size_t tempMemory = devFreeLimit - fixedMemSize - ivfStructureMemSize;
 
   res.setTempMemory(tempMemory / 256 * 256);
+  std::cout << "fixedMemSize: " << fixedMemSize << std::endl;
+  std::cout << "ivfStructureMemSize: " << ivfStructureMemSize << std::endl;
+  std::cout << "safeMemMargin: " << safeMemMargin << std::endl;
+  std::cout << "devFreeLimit: " << devFreeLimit << std::endl;
   std::cout << "tempMemory: " << tempMemory << std::endl;
   // res.noTempMemory();
 

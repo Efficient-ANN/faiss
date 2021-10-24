@@ -116,6 +116,18 @@ size_t IVFPQ::calcMemorySpaceSize(int numVecs, int numSubQuantizers,
          calcIndicesMemorySpaceSize(numVecs, options);
 }
 
+std::unordered_map<AllocType, size_t>
+IVFPQ::getAllocSizePerTypeInfo(int numVecs, int numSubQuantizers,
+                               int bitsPerSubQuantizer, bool interleavedLayout,
+                               IndicesOptions options) {
+  std::unordered_map<AllocType, size_t> allocSizePerType;
+  allocSizePerType[AllocType::InvListData] = calcVectorsEncodingMemorySpaceSize(
+      numVecs, numSubQuantizers, bitsPerSubQuantizer, interleavedLayout);
+  allocSizePerType[AllocType::InvListIndices] =
+      calcIndicesMemorySpaceSize(numVecs, options);
+  return allocSizePerType;
+}
+
 bool
 IVFPQ::isSupportedPQCodeLength(int size) {
   switch (size) {

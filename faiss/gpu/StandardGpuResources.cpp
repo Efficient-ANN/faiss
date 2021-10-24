@@ -65,29 +65,27 @@ std::string allocsToString(const std::unordered_map<void*, AllocRequest>& map) {
 // StandardGpuResourcesImpl
 //
 
-StandardGpuResourcesImpl::StandardGpuResourcesImpl() :
-    pinnedMemAlloc_(nullptr),
-    pinnedMemAllocSize_(0),
-    // let the adjustment function determine the memory size for us by passing
-    // in a huge value that will then be adjusted
-    tempMemSize_(getDefaultTempMemForGPU(-1,
-                                         std::numeric_limits<size_t>::max())),
-    fixedMemSize_(0),
-    pinnedMemSize_(kDefaultPinnedMemoryAllocation),
-    allocLogging_(false) {
-}
-
-StandardGpuResourcesImpl::StandardGpuResourcesImpl(size_t fixedMemSize)
+StandardGpuResourcesImpl::StandardGpuResourcesImpl()
     : pinnedMemAlloc_(nullptr), pinnedMemAllocSize_(0),
       // let the adjustment function determine the memory size for us by passing
       // in a huge value that will then be adjusted
       tempMemSize_(
           getDefaultTempMemForGPU(-1, std::numeric_limits<size_t>::max())),
-      fixedMemSize_(fixedMemSize),
+      allocSizePerTypeMap_(), pinnedMemSize_(kDefaultPinnedMemoryAllocation),
+      allocLogging_(false) {}
+
+StandardGpuResourcesImpl::StandardGpuResourcesImpl(
+    const std::unordered_map<AllocType, size_t> &allocSizePerTypeMap)
+    : pinnedMemAlloc_(nullptr), pinnedMemAllocSize_(0),
+      // let the adjustment function determine the memory size for us by passing
+      // in a huge value that will then be adjusted
+      tempMemSize_(
+          getDefaultTempMemForGPU(-1, std::numeric_limits<size_t>::max())),
+      allocSizePerTypeMap_(allocSizePerTypeMap),
       pinnedMemSize_(kDefaultPinnedMemoryAllocation), allocLogging_(false) {}
 
 StandardGpuResourcesImpl::~StandardGpuResourcesImpl() {
-  fixedMemory_.clear();
+  allocPerTypeMap_.clear();
 
   // The temporary memory allocator has allocated memory through us, so clean
   // that up before we finish fully de-initializing ourselves
@@ -361,11 +359,14 @@ StandardGpuResourcesImpl::initializeForDevice(int device) {
   FAISS_ASSERT(allocs_.count(device) == 0);
   allocs_[device] = std::unordered_map<void*, AllocRequest>();
 
-  FAISS_ASSERT(fixedMemory_.count(device) == 0);
-  auto fixedMem = std::unique_ptr<FixedDeviceMemory>(
-      new FixedDeviceMemory(this, device, fixedMemSize_));
+  FAISS_ASSERT(allocPerTypeMap_.count(device) == 0);
 
-  fixedMemory_.emplace(device, std::move(fixedMem));
+  for (auto &&allocSizePerType : allocSizePerTypeMap_) {
+    auto allocMem = std::unique_ptr<FixedDeviceMemory>(
+        new FixedDeviceMemory(this, device, allocSizePerType.second));
+    allocPerTypeMap_[device].emplace(allocSizePerType.first,
+                             std::move(allocMem));
+  }
 
   FAISS_ASSERT(tempMemory_.count(device) == 0);
   auto mem = std::unique_ptr<StackDeviceMemory>(
@@ -497,7 +498,7 @@ StandardGpuResourcesImpl::allocMemory(const AllocRequest& req) {
       FAISS_THROW_IF_NOT_FMT(err == cudaSuccess, "%s", str.c_str());
     }
   } else if(adjReq.space == MemorySpace::Fixed){
-    p = fixedMemory_[adjReq.device]->allocMemory(req.size);
+    p = allocPerTypeMap_[adjReq.device][adjReq.type]->allocMemory(req.size);
 
     if(p == nullptr){
       // We need to allocate this ourselves
@@ -601,8 +602,9 @@ StandardGpuResources::StandardGpuResources()
     : res_(new StandardGpuResourcesImpl) {
 }
 
-StandardGpuResources::StandardGpuResources(size_t fixedMemSize)
-    : res_(new StandardGpuResourcesImpl(fixedMemSize)) {}
+StandardGpuResources::StandardGpuResources(
+    const std::unordered_map<AllocType, size_t> &allocSizePerTypeMap)
+    : res_(new StandardGpuResourcesImpl(allocSizePerTypeMap)) {}
 
 StandardGpuResources::~StandardGpuResources() {
 }

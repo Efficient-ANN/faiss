@@ -120,15 +120,19 @@ void IMIBase::reset() {
   deviceListLengths_.clear();
   listOffsetToUserIndex_.clear();
 
-  auto info = AllocInfo(AllocType::IVFLists, getCurrentDevice(), space_,
-                        resources_->getDefaultStreamCurrentDevice());
+  auto infoInvListData =
+      AllocInfo(AllocType::InvListData, getCurrentDevice(), space_,
+                resources_->getDefaultStreamCurrentDevice());
+  auto infoInvListIndices =
+      AllocInfo(AllocType::InvListIndices, getCurrentDevice(), space_,
+                resources_->getDefaultStreamCurrentDevice());
 
   for (size_t i = 0; i < numLists_; ++i) {
-    deviceListData_.emplace_back(
-        std::unique_ptr<DeviceIVFList>(new DeviceIVFList(resources_, info)));
+    deviceListData_.emplace_back(std::unique_ptr<DeviceIVFList>(
+        new DeviceIVFList(resources_, infoInvListData)));
 
-    deviceListIndices_.emplace_back(
-        std::unique_ptr<DeviceIVFList>(new DeviceIVFList(resources_, info)));
+    deviceListIndices_.emplace_back(std::unique_ptr<DeviceIVFList>(
+        new DeviceIVFList(resources_, infoInvListIndices)));
 
     listOffsetToUserIndex_.emplace_back(std::vector<Index::idx_t>());
   }
@@ -316,8 +320,7 @@ int IMIBase::getListLength(int listId) {
   int hostSize;
   fromDevice<int>(deviceListLengths_.data() + listId, &hostSize, 1, stream);
   // LHS is the GPU resident value, RHS is the CPU resident value
-  FAISS_ASSERT(hostSize ==
-               deviceListData_[listId]->numVecs);
+  FAISS_ASSERT(hostSize == deviceListData_[listId]->numVecs);
 
   return deviceListData_[listId]->numVecs;
 }

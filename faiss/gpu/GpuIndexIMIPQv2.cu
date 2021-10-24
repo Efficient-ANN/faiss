@@ -8,6 +8,7 @@
 #include <faiss/IndexIVFPQ.h>
 #include <faiss/gpu/GpuIndexFlat.h>
 #include <faiss/gpu/GpuIndexIMIPQv2.h>
+#include <faiss/gpu/StandardGpuResources.h>
 #include <faiss/gpu/impl/IMIPQv2.cuh>
 #include <faiss/gpu/utils/CopyUtils.cuh>
 #include <faiss/gpu/utils/DeviceUtils.h>
@@ -66,6 +67,17 @@ GpuIndexIMIPQv2::GpuIndexIMIPQv2(std::shared_ptr<GpuResources> resources,
 }
 
 GpuIndexIMIPQv2::~GpuIndexIMIPQv2() {}
+
+std::unordered_map<AllocType, size_t>
+GpuIndexIMIPQv2::getInvListsAllocSizePerTypeInfo(int numVecs,
+                                                 int numSubQuantizers,
+                                                 int bitsPerSubQuantizer,
+                                                 bool interleavedLayout,
+                                                 IndicesOptions options) {
+  return IMIPQv2::getAllocSizePerTypeInfo(numVecs, numSubQuantizers,
+                                          bitsPerSubQuantizer,
+                                          interleavedLayout, options);
+}
 
 size_t GpuIndexIMIPQv2::calcInvListsMemorySpaceSize(int numVecs,
                                                     int numSubQuantizers,

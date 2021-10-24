@@ -30,6 +30,12 @@ std::string allocTypeToString(AllocType t) {
       return "TemporaryMemoryOverflow";
     case AllocType::FixedMemoryOverflow:
       return "FixedMemoryOverflow";
+    case AllocType::InvListData:
+      return "InvListData";
+    case AllocType::InvListIndices:
+      return "InvListIndices";
+    case AllocType::CoarseQuantizer:
+      return "CoarseQuantizer";
     default:
       return "Unknown";
   }

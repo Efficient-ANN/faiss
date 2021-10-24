@@ -43,6 +43,11 @@ class IVFPQ : public IVFBase {
                                     bool interleavedLayout,
                                     IndicesOptions options);
 
+  static std::unordered_map<AllocType, size_t>
+  getAllocSizePerTypeInfo(int numVecs, int numSubQuantizers,
+                          int bitsPerSubQuantizer, bool interleavedLayout,
+                          IndicesOptions options);
+
   void movePrecomputedCodesFrom(DeviceTensor<float, 3, true> &precomputedCode);
 
   /// Enable or disable pre-computed codes
