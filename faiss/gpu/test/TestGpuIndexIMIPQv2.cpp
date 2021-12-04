@@ -824,10 +824,7 @@ void testCopyFrom(int d, int nbitsCoarseQuantizer, int coarseCodebookSize,
 
   config.usePrecomputedTables = true;
 
-  faiss::gpu::GpuIndexIMIPQv2 imipqGpu(
-      &res, d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer, config);
-
-  imipqGpu.copyFrom(&imipqCpu);
+  faiss::gpu::GpuIndexIMIPQv2 imipqGpu(&res, &imipqCpu, config);
 
   faiss::gpu::GpuMultiIndex2 *multiIndexGpu = imipqGpu.getQuantizer();
 

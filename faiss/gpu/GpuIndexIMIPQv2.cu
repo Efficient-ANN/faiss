@@ -22,20 +22,28 @@ namespace gpu {
 GpuIndexIMIPQv2::GpuIndexIMIPQv2(GpuResourcesProvider *provider,
                                  const faiss::IndexIVFPQ *index,
                                  GpuIndexIMIPQConfig config)
-    : GpuIndexIMI(provider, index->d, index->nlist, config), pq(index->pq),
-      imipqConfig_(config), usePrecomputedTables_(config.usePrecomputedTables),
-      subQuantizers_(0), bitsPerCode_(0), reserveMemoryVecs_(0),
-      expectedNumAddsPerList(nullptr), index_(nullptr) {
+    : GpuIndexIMI(
+          provider, index->d,
+          dynamic_cast<const MultiIndexQuantizer *>(index->quantizer)->pq.ksub,
+          config),
+      pq(index->pq), imipqConfig_(config),
+      usePrecomputedTables_(config.usePrecomputedTables), subQuantizers_(0),
+      bitsPerCode_(0), reserveMemoryVecs_(0), expectedNumAddsPerList(nullptr),
+      index_(nullptr) {
   copyFrom(index);
 }
 
 GpuIndexIMIPQv2::GpuIndexIMIPQv2(std::shared_ptr<GpuResources> resources,
                                  const faiss::IndexIVFPQ *index,
                                  GpuIndexIMIPQConfig config)
-    : GpuIndexIMI(resources, index->d, index->nlist, config), pq(index->pq),
-      imipqConfig_(config), usePrecomputedTables_(config.usePrecomputedTables),
-      subQuantizers_(0), bitsPerCode_(0), reserveMemoryVecs_(0),
-      expectedNumAddsPerList(nullptr), index_(nullptr) {
+    : GpuIndexIMI(
+          resources, index->d,
+          dynamic_cast<const MultiIndexQuantizer *>(index->quantizer)->pq.ksub,
+          config),
+      pq(index->pq), imipqConfig_(config),
+      usePrecomputedTables_(config.usePrecomputedTables), subQuantizers_(0),
+      bitsPerCode_(0), reserveMemoryVecs_(0), expectedNumAddsPerList(nullptr),
+      index_(nullptr) {
   copyFrom(index);
 }
 
