@@ -198,7 +198,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
   std::cout << "devFreeLimit: " << devFreeLimit << std::endl;
   std::cout << "tempMemory: " << tempMemory << std::endl;
 
-  faiss::Index *indexMultiGpu;
+  faiss::Index *indexMultiGpu = nullptr;
   faiss::gpu::GpuIndexIMIPQConfig config;
   std::vector<faiss::gpu::GpuResourcesProvider *> resVector;
   std::vector<int> devs;
@@ -220,19 +220,21 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
       faiss::IndexIVFPQ *preBuildIndexCpu = dynamic_cast<faiss::IndexIVFPQ *>(
           faiss::read_index(fileNameIndex.c_str()));
 
-      faiss::gpu::GpuMultipleClonerOptions options;
-      options.memorySpace = config.memorySpace;
-      options.indicesOptions = config.indicesOptions;
-      options.usePrecomputed = config.usePrecomputedTables;
-      options.precomputeCodesOnCpu = config.precomputeCodesOnCpu;
-      options.shard = useShards;
-      options.shard_type = 1;
+      if (profile) {
+        faiss::gpu::GpuMultipleClonerOptions options;
+        options.memorySpace = config.memorySpace;
+        options.indicesOptions = config.indicesOptions;
+        options.usePrecomputed = config.usePrecomputedTables;
+        options.precomputeCodesOnCpu = config.precomputeCodesOnCpu;
+        options.shard = useShards;
+        options.shard_type = 1;
 
-      initResourcesMultiGpu(ngpus, allocSizePerTypeMapPerGpu, tempMemoryPerGpu,
-                            resVector, devs);
+        initResourcesMultiGpu(ngpus, allocSizePerTypeMapPerGpu,
+                              tempMemoryPerGpu, resVector, devs);
 
-      indexMultiGpu = faiss::gpu::index_cpu_to_gpu_multiple(
-          resVector, devs, preBuildIndexCpu, &options);
+        indexMultiGpu = faiss::gpu::index_cpu_to_gpu_multiple(
+            resVector, devs, preBuildIndexCpu, &options);
+      }
 
       delete preBuildIndexCpu;
       isLoadead = true;
@@ -380,22 +382,24 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
       faiss::write_index(indexCpu, fileNameIndex.c_str());
     }
 
-    faiss::gpu::GpuMultipleClonerOptions options;
-    options.memorySpace = config.memorySpace;
-    options.indicesOptions = config.indicesOptions;
-    options.usePrecomputed = config.usePrecomputedTables;
-    options.precomputeCodesOnCpu = config.precomputeCodesOnCpu;
-    options.shard = useShards;
-    options.shard_type = 1;
+    if (profile) {
+      faiss::gpu::GpuMultipleClonerOptions options;
+      options.memorySpace = config.memorySpace;
+      options.indicesOptions = config.indicesOptions;
+      options.usePrecomputed = config.usePrecomputedTables;
+      options.precomputeCodesOnCpu = config.precomputeCodesOnCpu;
+      options.shard = useShards;
+      options.shard_type = 1;
 
-    std::cout << "Ininting resource for multiple GPUs" << std::endl;
-    initResourcesMultiGpu(ngpus, allocSizePerTypeMapPerGpu, tempMemoryPerGpu,
-                          resVector, devs);
+      std::cout << "Ininting resource for multiple GPUs" << std::endl;
+      initResourcesMultiGpu(ngpus, allocSizePerTypeMapPerGpu, tempMemoryPerGpu,
+                            resVector, devs);
 
-    std::cout << "Moving index from cpu to multiple GPUs: " << std::endl;
-    indexMultiGpu = faiss::gpu::index_cpu_to_gpu_multiple(resVector, devs,
-                                                          indexCpu, &options);
-    std::cout << "Index moved" << std::endl;
+      std::cout << "Moving index from cpu to multiple GPUs: " << std::endl;
+      indexMultiGpu = faiss::gpu::index_cpu_to_gpu_multiple(resVector, devs,
+                                                            indexCpu, &options);
+      std::cout << "Index moved" << std::endl;
+    }
     delete indexCpu;
   }
 
@@ -469,7 +473,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
 
   delete indexMultiGpu;
 
-  for (int i = 0; i < ngpus; i++) {
+  for (int i = 0; i < resVector.size(); i++) {
     delete resVector[i];
   }
 }
@@ -513,6 +517,8 @@ int main(int argc, char **argv) {
   fileNameCoarseQuantizer = argc > 23 ? argv[23] : "";
   fileNameIndex = argc > 24 ? argv[24] : "";
   profile = argc > 25 ? std::stoi(argv[25]) : 1;
+
+  std::cout << profile << std::endl;
 
   omp_set_num_threads(numThreads);
 
