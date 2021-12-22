@@ -60,7 +60,7 @@ public:
 
   /// For debugging purposes, return the list offset of a particular
   /// list
-  int getListOffset(int listId);
+  unsigned int getListOffset(int listId);
 
   /// For debugging purposes, return the length of all lists
   int getAllListsLength();
@@ -85,7 +85,6 @@ public:
                  Tensor<Index::idx_t, 1, true> &indices);
 
 protected:
-
   /// Returns the number of bytes in which an IVF list containing numVecs
   /// vectors is encoded on the device. Note that due to padding this is not the
   /// same as the encoding size for a subset of vectors in an IVF list; this is

@@ -182,7 +182,7 @@ int IMIBasev2::getAllListsLength() {
   return length;
 }
 
-int IMIBasev2::getListOffset(int listId) {
+unsigned int IMIBasev2::getListOffset(int listId) {
   FAISS_THROW_IF_NOT_FMT(listId < numLists_,
                          "IVF list %d is out of bounds (%d lists total)",
                          listId, numLists_);
@@ -269,9 +269,9 @@ std::vector<uint8_t> IMIBasev2::getListVectorData(int listId, bool gpuFormat) {
     return std::vector<uint8_t>();
   }
 
-  int listLengthNumBytes = getGpuVectorsEncodingSize_(listLength);
-  int listOffset = getListOffset(listId);
-  int listOffsetNumBytes = getGpuVectorsEncodingSize_(listOffset);
+  size_t listLengthNumBytes = getGpuVectorsEncodingSize_(listLength);
+  unsigned int listOffset = getListOffset(listId);
+  size_t listOffsetNumBytes = getGpuVectorsEncodingSize_(listOffset);
 
   std::vector<uint8_t> gpuCodes(listLengthNumBytes);
   auto stream = resources_->getDefaultStreamCurrentDevice();
@@ -312,8 +312,8 @@ void IMIBasev2::copyInvertedListsFrom(InvertedLists *ivf) {
     const uint8_t *codes = (const uint8_t *)ivf->get_codes(i);
     const Index::idx_t *ids = ivf->get_ids(i);
 
-    int listOffsetNumBytes = getGpuVectorsEncodingSize_(offset);
-    int listLengthNumBytes = getGpuVectorsEncodingSize_(listSize);
+    size_t listOffsetNumBytes = getGpuVectorsEncodingSize_(offset);
+    size_t listLengthNumBytes = getGpuVectorsEncodingSize_(listSize);
 
     codesVector.resize(listLengthNumBytes);
     idsVector.resize(listSize);
