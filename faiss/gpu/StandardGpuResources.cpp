@@ -5,16 +5,16 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-
 #include <faiss/gpu/StandardGpuResources.h>
 #include <faiss/gpu/utils/DeviceUtils.h>
 #include <faiss/gpu/utils/StaticUtils.h>
 #include <faiss/impl/FaissAssert.h>
-#include <limits>
 #include <iostream>
+#include <limits>
 #include <sstream>
 
-namespace faiss { namespace gpu {
+namespace faiss {
+namespace gpu {
 
 namespace {
 
@@ -22,23 +22,24 @@ namespace {
 constexpr int kNumStreams = 2;
 
 // Use 256 MiB of pinned memory for async CPU <-> GPU copies by default
-constexpr size_t kDefaultPinnedMemoryAllocation = (size_t) 256 * 1024 * 1024;
+constexpr size_t kDefaultPinnedMemoryAllocation = (size_t)256 * 1024 * 1024;
 
 // Default temporary memory allocation for <= 4 GiB memory GPUs
-constexpr size_t k4GiBTempMem = (size_t) 512 * 1024 * 1024;
+constexpr size_t k4GiBTempMem = (size_t)512 * 1024 * 1024;
 
 // Default temporary memory allocation for <= 8 GiB memory GPUs
-constexpr size_t k8GiBTempMem = (size_t) 1024 * 1024 * 1024;
+constexpr size_t k8GiBTempMem = (size_t)1024 * 1024 * 1024;
 
 // Maximum temporary memory allocation for all GPUs
-constexpr size_t kMaxTempMem = (size_t) 1536 * 1024 * 1024;
+constexpr size_t kMaxTempMem = (size_t)1536 * 1024 * 1024;
 
-std::string allocsToString(const std::unordered_map<void*, AllocRequest>& map) {
+std::string
+allocsToString(const std::unordered_map<void *, AllocRequest> &map) {
   // Produce a sorted list of all outstanding allocations by type
   std::unordered_map<AllocType, std::pair<int, size_t>> stats;
 
-  for (auto& entry : map) {
-    auto& a = entry.second;
+  for (auto &entry : map) {
+    auto &a = entry.second;
 
     auto it = stats.find(a.type);
     if (it != stats.end()) {
@@ -50,16 +51,16 @@ std::string allocsToString(const std::unordered_map<void*, AllocRequest>& map) {
   }
 
   std::stringstream ss;
-  for (auto& entry : stats) {
+  for (auto &entry : stats) {
     ss << "Alloc type " << allocTypeToString(entry.first) << ": "
-       << entry.second.first << " allocations, "
-       << entry.second.second << " bytes\n";
+       << entry.second.first << " allocations, " << entry.second.second
+       << " bytes\n";
   }
 
   return ss.str();
 }
 
-}
+} // namespace
 
 //
 // StandardGpuResourcesImpl
@@ -94,28 +95,29 @@ StandardGpuResourcesImpl::~StandardGpuResourcesImpl() {
   // Make sure all allocations have been freed
   bool allocError = false;
 
-  for (auto& entry : allocs_) {
-    auto& map = entry.second;
+  for (auto &entry : allocs_) {
+    auto &map = entry.second;
 
     if (!map.empty()) {
       std::cerr
-        << "StandardGpuResources destroyed with allocations outstanding:\n"
-        << "Device " << entry.first << " outstanding allocations:\n";
+          << "StandardGpuResources destroyed with allocations outstanding:\n"
+          << "Device " << entry.first << " outstanding allocations:\n";
       std::cerr << allocsToString(map);
       allocError = true;
     }
   }
 
-  FAISS_ASSERT_MSG(!allocError, "GPU memory allocations not properly cleaned up");
+  FAISS_ASSERT_MSG(!allocError,
+                   "GPU memory allocations not properly cleaned up");
 
-  for (auto& entry : defaultStreams_) {
+  for (auto &entry : defaultStreams_) {
     DeviceScope scope(entry.first);
 
     // We created these streams, so are responsible for destroying them
     CUDA_VERIFY(cudaStreamDestroy(entry.second));
   }
 
-  for (auto& entry : alternateStreams_) {
+  for (auto &entry : alternateStreams_) {
     DeviceScope scope(entry.first);
 
     for (auto stream : entry.second) {
@@ -123,13 +125,13 @@ StandardGpuResourcesImpl::~StandardGpuResourcesImpl() {
     }
   }
 
-  for (auto& entry : asyncCopyStreams_) {
+  for (auto &entry : asyncCopyStreams_) {
     DeviceScope scope(entry.first);
 
     CUDA_VERIFY(cudaStreamDestroy(entry.second));
   }
 
-  for (auto& entry : blasHandles_) {
+  for (auto &entry : blasHandles_) {
     DeviceScope scope(entry.first);
 
     auto blasStatus = cublasDestroy(entry.second);
@@ -140,24 +142,22 @@ StandardGpuResourcesImpl::~StandardGpuResourcesImpl() {
     auto err = cudaFreeHost(pinnedMemAlloc_);
     FAISS_ASSERT_FMT(err == cudaSuccess,
                      "Failed to cudaFreeHost pointer %p (error %d %s)",
-                     pinnedMemAlloc_, (int) err, cudaGetErrorString(err));
+                     pinnedMemAlloc_, (int)err, cudaGetErrorString(err));
   }
 }
 
-size_t
-StandardGpuResourcesImpl::getDefaultTempMemForGPU(int device,
-                                                  size_t requested) {
-  auto totalMem = device != -1 ?
-    getDeviceProperties(device).totalGlobalMem :
-    std::numeric_limits<size_t>::max();
+size_t StandardGpuResourcesImpl::getDefaultTempMemForGPU(int device,
+                                                         size_t requested) {
+  auto totalMem = device != -1 ? getDeviceProperties(device).totalGlobalMem
+                               : std::numeric_limits<size_t>::max();
 
-  if (totalMem <= (size_t) 4 * 1024 * 1024 * 1024) {
+  if (totalMem <= (size_t)4 * 1024 * 1024 * 1024) {
     // If the GPU has <= 4 GiB of memory, reserve 512 MiB
 
     if (requested > k4GiBTempMem) {
       return k4GiBTempMem;
     }
-  } else if (totalMem <= (size_t) 8 * 1024 * 1024 * 1024) {
+  } else if (totalMem <= (size_t)8 * 1024 * 1024 * 1024) {
     // If the GPU has <= 8 GiB of memory, reserve 1 GiB
 
     if (requested > k8GiBTempMem) {
@@ -174,16 +174,12 @@ StandardGpuResourcesImpl::getDefaultTempMemForGPU(int device,
   return requested;
 }
 
-void
-StandardGpuResourcesImpl::noTempMemory() {
-  setTempMemory(0);
-}
+void StandardGpuResourcesImpl::noTempMemory() { setTempMemory(0); }
 
-void
-StandardGpuResourcesImpl::setTempMemory(size_t size) {
+void StandardGpuResourcesImpl::setTempMemory(size_t size) {
   if (tempMemSize_ != size) {
     // adjust based on general limits
-    //tempMemSize_ = getDefaultTempMemForGPU(-1, size);
+    // tempMemSize_ = getDefaultTempMemForGPU(-1, size);
     tempMemSize_ = size;
 
     // We need to re-initialize memory resources for all current devices that
@@ -191,24 +187,22 @@ StandardGpuResourcesImpl::setTempMemory(size_t size) {
     // This should be safe to do, even if we are currently running work, because
     // the cudaFree call that this implies will force-synchronize all GPUs with
     // the CPU
-    for (auto& p : tempMemory_) {
+    for (auto &p : tempMemory_) {
       int device = p.first;
       // Free the existing memory first
       p.second.reset();
 
       // Allocate new
       p.second = std::unique_ptr<StackDeviceMemory>(
-        new StackDeviceMemory(this,
-                              p.first,
-                              // adjust for this specific device
-                              //getDefaultTempMemForGPU(device, tempMemSize_)
-                              tempMemSize_));
+          new StackDeviceMemory(this, p.first,
+                                // adjust for this specific device
+                                // getDefaultTempMemForGPU(device, tempMemSize_)
+                                tempMemSize_));
     }
   }
 }
 
-void
-StandardGpuResourcesImpl::setPinnedMemory(size_t size) {
+void StandardGpuResourcesImpl::setPinnedMemory(size_t size) {
   // Should not call this after devices have been initialized
   FAISS_ASSERT(defaultStreams_.size() == 0);
   FAISS_ASSERT(!pinnedMemAlloc_);
@@ -216,12 +210,12 @@ StandardGpuResourcesImpl::setPinnedMemory(size_t size) {
   pinnedMemSize_ = size;
 }
 
-void
-StandardGpuResourcesImpl::setDefaultStream(int device, cudaStream_t stream) {
+void StandardGpuResourcesImpl::setDefaultStream(int device,
+                                                cudaStream_t stream) {
   if (isInitialized(device)) {
-     // A new series of calls may not be ordered with what was the previous
-     // stream, so if the stream being specified is different, then we need to
-     // ensure ordering between the two (new stream waits on old).
+    // A new series of calls may not be ordered with what was the previous
+    // stream, so if the stream being specified is different, then we need to
+    // ensure ordering between the two (new stream waits on old).
     auto it = userDefaultStreams_.find(device);
     cudaStream_t prevStream = nullptr;
 
@@ -240,8 +234,7 @@ StandardGpuResourcesImpl::setDefaultStream(int device, cudaStream_t stream) {
   userDefaultStreams_[device] = stream;
 }
 
-void
-StandardGpuResourcesImpl::revertDefaultStream(int device) {
+void StandardGpuResourcesImpl::revertDefaultStream(int device) {
   if (isInitialized(device)) {
     auto it = userDefaultStreams_.find(device);
 
@@ -259,27 +252,23 @@ StandardGpuResourcesImpl::revertDefaultStream(int device) {
   userDefaultStreams_.erase(device);
 }
 
-void
-StandardGpuResourcesImpl::setDefaultNullStreamAllDevices() {
+void StandardGpuResourcesImpl::setDefaultNullStreamAllDevices() {
   for (int dev = 0; dev < getNumDevices(); ++dev) {
     setDefaultStream(dev, nullptr);
   }
 }
 
-void
-StandardGpuResourcesImpl::setLogMemoryAllocations(bool enable) {
+void StandardGpuResourcesImpl::setLogMemoryAllocations(bool enable) {
   allocLogging_ = enable;
 }
 
-bool
-StandardGpuResourcesImpl::isInitialized(int device) const {
+bool StandardGpuResourcesImpl::isInitialized(int device) const {
   // Use default streams as a marker for whether or not a certain
   // device has been initialized
   return defaultStreams_.count(device) != 0;
 }
 
-void
-StandardGpuResourcesImpl::initializeForDevice(int device) {
+void StandardGpuResourcesImpl::initializeForDevice(int device) {
   if (isInitialized(device)) {
     return;
   }
@@ -288,13 +277,12 @@ StandardGpuResourcesImpl::initializeForDevice(int device) {
   // pinned memory allocation
   if (defaultStreams_.empty() && pinnedMemSize_ > 0) {
     auto err =
-      cudaHostAlloc(&pinnedMemAlloc_, pinnedMemSize_, cudaHostAllocDefault);
+        cudaHostAlloc(&pinnedMemAlloc_, pinnedMemSize_, cudaHostAllocDefault);
 
-    FAISS_THROW_IF_NOT_FMT(
-      err == cudaSuccess,
-      "failed to cudaHostAlloc %zu bytes for CPU <-> GPU "
-      "async copy buffer (error %d %s)",
-      pinnedMemSize_, (int) err, cudaGetErrorString(err));
+    FAISS_THROW_IF_NOT_FMT(err == cudaSuccess,
+                           "failed to cudaHostAlloc %zu bytes for CPU <-> GPU "
+                           "async copy buffer (error %d %s)",
+                           pinnedMemSize_, (int)err, cudaGetErrorString(err));
 
     pinnedMemAllocSize_ = pinnedMemSize_;
   }
@@ -303,7 +291,7 @@ StandardGpuResourcesImpl::initializeForDevice(int device) {
   DeviceScope scope(device);
 
   // Make sure that device properties for all devices are cached
-  auto& prop = getDeviceProperties(device);
+  auto &prop = getDeviceProperties(device);
 
   // Also check to make sure we meet our minimum compute capability (3.0)
   FAISS_ASSERT_FMT(prop.major >= 3,
@@ -318,22 +306,20 @@ StandardGpuResourcesImpl::initializeForDevice(int device) {
 
   // Create streams
   cudaStream_t defaultStream = 0;
-  CUDA_VERIFY(cudaStreamCreateWithFlags(&defaultStream,
-                                        cudaStreamNonBlocking));
+  CUDA_VERIFY(cudaStreamCreateWithFlags(&defaultStream, cudaStreamNonBlocking));
 
   defaultStreams_[device] = defaultStream;
 
   cudaStream_t asyncCopyStream = 0;
-  CUDA_VERIFY(cudaStreamCreateWithFlags(&asyncCopyStream,
-                                        cudaStreamNonBlocking));
+  CUDA_VERIFY(
+      cudaStreamCreateWithFlags(&asyncCopyStream, cudaStreamNonBlocking));
 
   asyncCopyStreams_[device] = asyncCopyStream;
 
   std::vector<cudaStream_t> deviceStreams;
   for (int j = 0; j < kNumStreams; ++j) {
     cudaStream_t stream = 0;
-    CUDA_VERIFY(cudaStreamCreateWithFlags(&stream,
-                                          cudaStreamNonBlocking));
+    CUDA_VERIFY(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking));
 
     deviceStreams.push_back(stream);
   }
@@ -357,7 +343,7 @@ StandardGpuResourcesImpl::initializeForDevice(int device) {
 #endif
 
   FAISS_ASSERT(allocs_.count(device) == 0);
-  allocs_[device] = std::unordered_map<void*, AllocRequest>();
+  allocs_[device] = std::unordered_map<void *, AllocRequest>();
 
   FAISS_ASSERT(allocPerTypeMap_.count(device) == 0);
 
@@ -365,28 +351,25 @@ StandardGpuResourcesImpl::initializeForDevice(int device) {
     auto allocMem = std::unique_ptr<FixedDeviceMemory>(
         new FixedDeviceMemory(this, device, allocSizePerType.second));
     allocPerTypeMap_[device].emplace(allocSizePerType.first,
-                             std::move(allocMem));
+                                     std::move(allocMem));
   }
 
   FAISS_ASSERT(tempMemory_.count(device) == 0);
   auto mem = std::unique_ptr<StackDeviceMemory>(
-    new StackDeviceMemory(this,
-                          device,
-                          // adjust for this specific device
-                          //getDefaultTempMemForGPU(device, tempMemSize_)
-                          tempMemSize_));
+      new StackDeviceMemory(this, device,
+                            // adjust for this specific device
+                            // getDefaultTempMemForGPU(device, tempMemSize_)
+                            tempMemSize_));
 
   tempMemory_.emplace(device, std::move(mem));
 }
 
-cublasHandle_t
-StandardGpuResourcesImpl::getBlasHandle(int device) {
+cublasHandle_t StandardGpuResourcesImpl::getBlasHandle(int device) {
   initializeForDevice(device);
   return blasHandles_[device];
 }
 
-cudaStream_t
-StandardGpuResourcesImpl::getDefaultStream(int device) {
+cudaStream_t StandardGpuResourcesImpl::getDefaultStream(int device) {
   initializeForDevice(device);
 
   auto it = userDefaultStreams_.find(device);
@@ -405,19 +388,16 @@ StandardGpuResourcesImpl::getAlternateStreams(int device) {
   return alternateStreams_[device];
 }
 
-std::pair<void*, size_t>
-StandardGpuResourcesImpl::getPinnedMemory() {
+std::pair<void *, size_t> StandardGpuResourcesImpl::getPinnedMemory() {
   return std::make_pair(pinnedMemAlloc_, pinnedMemAllocSize_);
 }
 
-cudaStream_t
-StandardGpuResourcesImpl::getAsyncCopyStream(int device) {
+cudaStream_t StandardGpuResourcesImpl::getAsyncCopyStream(int device) {
   initializeForDevice(device);
   return asyncCopyStreams_[device];
 }
 
-void*
-StandardGpuResourcesImpl::allocMemory(const AllocRequest& req) {
+void *StandardGpuResourcesImpl::allocMemory(const AllocRequest &req) {
   initializeForDevice(req.device);
 
   // We don't allocate a placeholder for zero-sized allocations
@@ -425,17 +405,22 @@ StandardGpuResourcesImpl::allocMemory(const AllocRequest& req) {
     return nullptr;
   }
 
+  if (allocLogging_) {
+    std::cout << "StandardGpuResources: alloc request of " << req.size
+              << " bytes" << std::endl;
+  }
+
   // cudaMalloc guarantees allocation alignment to 256 bytes; do the same here
   // for alignment purposes (to reduce memory transaction overhead etc)
   auto adjReq = req;
-  adjReq.size = utils::roundUp(adjReq.size, (size_t) 256);
+  adjReq.size = utils::roundUp(adjReq.size, (size_t)256);
 
-  void* p = nullptr;
+  void *p = nullptr;
 
   if (adjReq.space == MemorySpace::Temporary) {
     // If we don't have enough space in our temporary memory manager, we need
     // to allocate this request separately
-    auto& tempMem = tempMemory_[adjReq.device];
+    auto &tempMem = tempMemory_[adjReq.device];
 
     if (adjReq.size > tempMem->getSizeAvailable()) {
       // We need to allocate this ourselves
@@ -444,8 +429,8 @@ StandardGpuResourcesImpl::allocMemory(const AllocRequest& req) {
       newReq.type = AllocType::TemporaryMemoryOverflow;
 
       // if (allocLogging_) {
-        std::cout << "StandardGpuResources: alloc fail " << adjReq.toString()
-                  << " (no temp space); retrying as MemorySpace::Device\n";
+      std::cout << "StandardGpuResources: alloc fail " << adjReq.toString()
+                << " (no temp space); retrying as MemorySpace::Device\n";
       // }
 
       return allocMemory(newReq);
@@ -466,8 +451,8 @@ StandardGpuResourcesImpl::allocMemory(const AllocRequest& req) {
 
       std::stringstream ss;
       ss << "StandardGpuResources: alloc fail " << adjReq.toString()
-         << " (cudaMalloc error "
-         << cudaGetErrorString(err) << " [" << (int) err << "])\n";
+         << " (cudaMalloc error " << cudaGetErrorString(err) << " [" << (int)err
+         << "])\n";
       auto str = ss.str();
 
       if (allocLogging_) {
@@ -487,8 +472,8 @@ StandardGpuResourcesImpl::allocMemory(const AllocRequest& req) {
 
       std::stringstream ss;
       ss << "StandardGpuResources: alloc fail " << adjReq.toString()
-         << " failed (cudaMallocManaged error "
-         << cudaGetErrorString(err) << " [" << (int) err << "])\n";
+         << " failed (cudaMallocManaged error " << cudaGetErrorString(err)
+         << " [" << (int)err << "])\n";
       auto str = ss.str();
 
       if (allocLogging_) {
@@ -497,10 +482,10 @@ StandardGpuResourcesImpl::allocMemory(const AllocRequest& req) {
 
       FAISS_THROW_IF_NOT_FMT(err == cudaSuccess, "%s", str.c_str());
     }
-  } else if(adjReq.space == MemorySpace::Fixed){
+  } else if (adjReq.space == MemorySpace::Fixed) {
     p = allocPerTypeMap_[adjReq.device][adjReq.type]->allocMemory(req.size);
 
-    if(p == nullptr){
+    if (p == nullptr) {
       // We need to allocate this ourselves
       AllocRequest newReq = req;
       newReq.space = MemorySpace::Device;
@@ -514,7 +499,7 @@ StandardGpuResourcesImpl::allocMemory(const AllocRequest& req) {
       return allocMemory(newReq);
     }
   } else {
-    FAISS_ASSERT_FMT(false, "unknown MemorySpace %d", (int) adjReq.space);
+    FAISS_ASSERT_FMT(false, "unknown MemorySpace %d", (int)adjReq.space);
   }
 
   if (allocLogging_) {
@@ -527,19 +512,18 @@ StandardGpuResourcesImpl::allocMemory(const AllocRequest& req) {
   return p;
 }
 
-void
-StandardGpuResourcesImpl::deallocMemory(int device, void* p) {
+void StandardGpuResourcesImpl::deallocMemory(int device, void *p) {
   FAISS_ASSERT(isInitialized(device));
 
   if (!p) {
     return;
   }
 
-  auto& a = allocs_[device];
+  auto &a = allocs_[device];
   auto it = a.find(p);
   FAISS_ASSERT(it != a.end());
 
-  auto& req = it->second;
+  auto &req = it->second;
 
   if (allocLogging_) {
     std::cout << "StandardGpuResources: dealloc " << req.toString() << "\n";
@@ -552,19 +536,18 @@ StandardGpuResourcesImpl::deallocMemory(int device, void* p) {
              req.space == MemorySpace::Unified) {
     auto err = cudaFree(p);
     FAISS_ASSERT_FMT(err == cudaSuccess,
-                     "Failed to cudaFree pointer %p (error %d %s)",
-                     p, (int) err, cudaGetErrorString(err));
+                     "Failed to cudaFree pointer %p (error %d %s)", p, (int)err,
+                     cudaGetErrorString(err));
   } else if (req.space == MemorySpace::Fixed) {
     // does not need to dealloc
   } else {
-    FAISS_ASSERT_FMT(false, "unknown MemorySpace %d", (int) req.space);
+    FAISS_ASSERT_FMT(false, "unknown MemorySpace %d", (int)req.space);
   }
 
   a.erase(it);
 }
 
-size_t
-StandardGpuResourcesImpl::getTempMemoryAvailable(int device) const {
+size_t StandardGpuResourcesImpl::getTempMemoryAvailable(int device) const {
   FAISS_ASSERT(isInitialized(device));
 
   auto it = tempMemory_.find(device);
@@ -579,11 +562,11 @@ StandardGpuResourcesImpl::getMemoryInfo() const {
 
   std::map<int, AT> out;
 
-  for (auto& entry : allocs_) {
+  for (auto &entry : allocs_) {
     AT outDevice;
 
-    for (auto& a : entry.second) {
-      auto& v = outDevice[allocTypeToString(a.second.type)];
+    for (auto &a : entry.second) {
+      auto &v = outDevice[allocTypeToString(a.second.type)];
       v.first++;
       v.second += a.second.size;
     }
@@ -599,48 +582,37 @@ StandardGpuResourcesImpl::getMemoryInfo() const {
 //
 
 StandardGpuResources::StandardGpuResources()
-    : res_(new StandardGpuResourcesImpl) {
-}
+    : res_(new StandardGpuResourcesImpl) {}
 
 StandardGpuResources::StandardGpuResources(
     const std::unordered_map<AllocType, size_t> &allocSizePerTypeMap)
     : res_(new StandardGpuResourcesImpl(allocSizePerTypeMap)) {}
 
-StandardGpuResources::~StandardGpuResources() {
-}
+StandardGpuResources::~StandardGpuResources() {}
 
-std::shared_ptr<GpuResources>
-StandardGpuResources::getResources() {
+std::shared_ptr<GpuResources> StandardGpuResources::getResources() {
   return res_;
 }
 
-void
-StandardGpuResources::noTempMemory() {
-  res_->noTempMemory();
-}
+void StandardGpuResources::noTempMemory() { res_->noTempMemory(); }
 
-void
-StandardGpuResources::setTempMemory(size_t size) {
+void StandardGpuResources::setTempMemory(size_t size) {
   res_->setTempMemory(size);
 }
 
-void
-StandardGpuResources::setPinnedMemory(size_t size) {
+void StandardGpuResources::setPinnedMemory(size_t size) {
   res_->setPinnedMemory(size);
 }
 
-void
-StandardGpuResources::setDefaultStream(int device, cudaStream_t stream) {
+void StandardGpuResources::setDefaultStream(int device, cudaStream_t stream) {
   res_->setDefaultStream(device, stream);
 }
 
-void
-StandardGpuResources::revertDefaultStream(int device) {
+void StandardGpuResources::revertDefaultStream(int device) {
   res_->revertDefaultStream(device);
 }
 
-void
-StandardGpuResources::setDefaultNullStreamAllDevices() {
+void StandardGpuResources::setDefaultNullStreamAllDevices() {
   res_->setDefaultNullStreamAllDevices();
 }
 
@@ -649,24 +621,21 @@ StandardGpuResources::getMemoryInfo() const {
   return res_->getMemoryInfo();
 }
 
-cudaStream_t
-StandardGpuResources::getDefaultStream(int device) {
+cudaStream_t StandardGpuResources::getDefaultStream(int device) {
   return res_->getDefaultStream(device);
 }
 
-size_t
-StandardGpuResources::getTempMemoryAvailable(int device) const {
+size_t StandardGpuResources::getTempMemoryAvailable(int device) const {
   return res_->getTempMemoryAvailable(device);
 }
 
-void
-StandardGpuResources::syncDefaultStreamCurrentDevice() {
+void StandardGpuResources::syncDefaultStreamCurrentDevice() {
   res_->syncDefaultStreamCurrentDevice();
 }
 
-void
-StandardGpuResources::setLogMemoryAllocations(bool enable) {
+void StandardGpuResources::setLogMemoryAllocations(bool enable) {
   res_->setLogMemoryAllocations(enable);
 }
 
-} } // namespace
+} // namespace gpu
+} // namespace faiss

@@ -121,10 +121,11 @@ void initResourcesMultiGpu(
         &allocSizePerTypeMapPerGpu,
     size_t tempMemory,
     std::vector<faiss::gpu::GpuResourcesProvider *> &resVector,
-    std::vector<int> &devs) {
+    std::vector<int> &devs, bool allocLogging) {
   for (int i = 0; i < ngpus; i++) {
     faiss::gpu::StandardGpuResources *res;
     res = new faiss::gpu::StandardGpuResources(allocSizePerTypeMapPerGpu);
+    res->setLogMemoryAllocations(allocLogging);
     res->setTempMemory(tempMemory);
     resVector.push_back(res);
     devs.push_back(i);
@@ -141,7 +142,7 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
                 int nprobeEnd, int kBegin, int kEnd, bool usePrecomputed,
                 int ngpus, bool useShards, size_t safeMemMargin,
                 std::string fileNameCoarseQuantizer, std::string fileNameIndex,
-                bool profile) {
+                bool profile, bool allocLogging) {
   size_t devFree = 0;
   size_t devTotal = 0;
   constexpr int maxPageSize = 2 * 1024 * 1024; // 2MB
@@ -238,7 +239,7 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
         options.shard_type = 1;
 
         initResourcesMultiGpu(ngpus, allocSizePerTypeMapPerGpu,
-                              tempMemoryPerGpu, resVector, devs);
+                              tempMemoryPerGpu, resVector, devs, allocLogging);
 
         indexMultiGpu = faiss::gpu::index_cpu_to_gpu_multiple(
             resVector, devs, preBuildIndexCpu, &options);
@@ -254,6 +255,7 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
     faiss::Index *indexCpu = nullptr;
     { // indexing
       faiss::gpu::StandardGpuResources res(allocSizePerTypeMap);
+      res.setLogMemoryAllocations(allocLogging);
       res.setTempMemory(tempMemory);
       faiss::gpu::GpuIndexIVFPQ *ivfpq;
       ivfpq = new faiss::gpu::GpuIndexIVFPQ(&res, d, nlist, numSubQuantizers,
@@ -402,7 +404,7 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
 
       std::cout << "Ininting resource for multiple GPUs" << std::endl;
       initResourcesMultiGpu(ngpus, allocSizePerTypeMapPerGpu, tempMemoryPerGpu,
-                            resVector, devs);
+                            resVector, devs, allocLogging);
 
       std::cout << "Moving index from cpu to multiple GPUs: " << std::endl;
       indexMultiGpu = faiss::gpu::index_cpu_to_gpu_multiple(resVector, devs,
@@ -494,7 +496,8 @@ int main(int argc, char **argv) {
 
   int d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer, queriesOffset,
       numQueriesBegin, numQueriesEnd, kBegin, kEnd, nprobeBegin, nprobeEnd,
-      isFloat, usePrecomputed, numThreads, ngpus, useShards, profile;
+      isFloat, usePrecomputed, numThreads, ngpus, useShards, profile,
+      allocLogging;
   size_t numTrainingVecs, numIndexingVecs;
   std::string fileNameTraining, fileNameIndexing, fileNameQueries,
       fileNameGroundTruth, fileNameCoarseQuantizer, fileNameIndex;
@@ -526,6 +529,7 @@ int main(int argc, char **argv) {
   fileNameCoarseQuantizer = argc > 24 ? argv[24] : "";
   fileNameIndex = argc > 25 ? argv[25] : "";
   profile = argc > 26 ? std::stoi(argv[26]) : 1;
+  allocLogging = argc > 27 ? std::stoi(argv[27]) : 0;
 
   omp_set_num_threads(numThreads);
 
@@ -538,15 +542,15 @@ int main(int argc, char **argv) {
                      fileNameGroundTruth, numQueriesBegin, numQueriesEnd,
                      nprobeBegin, nprobeEnd, kBegin, kEnd, usePrecomputed == 1,
                      ngpus, useShards, safeMemMargin, fileNameCoarseQuantizer,
-                     fileNameIndex, profile);
+                     fileNameIndex, profile, allocLogging);
   } else {
-    demo_ivfpq<false>(d, coarseCodebookSize, numSubQuantizers,
-                      nbitsSubQuantizer, fileNameTraining, numTrainingVecs,
-                      fileNameIndexing, numIndexingVecs, fileNameQueries,
-                      queriesOffset, fileNameGroundTruth, numQueriesBegin,
-                      numQueriesEnd, nprobeBegin, nprobeEnd, kBegin, kEnd,
-                      usePrecomputed == 1, ngpus, useShards, safeMemMargin,
-                      fileNameCoarseQuantizer, fileNameIndex, profile);
+    demo_ivfpq<false>(
+        d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer,
+        fileNameTraining, numTrainingVecs, fileNameIndexing, numIndexingVecs,
+        fileNameQueries, queriesOffset, fileNameGroundTruth, numQueriesBegin,
+        numQueriesEnd, nprobeBegin, nprobeEnd, kBegin, kEnd,
+        usePrecomputed == 1, ngpus, useShards, safeMemMargin,
+        fileNameCoarseQuantizer, fileNameIndex, profile, allocLogging);
   }
   return 0;
 }
