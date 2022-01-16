@@ -83,12 +83,11 @@ void demo_imipq(int d, int nbitsCoarseQuantizer, int numSubQuantizers,
   faiss::MultiIndexQuantizer multiIndexCpu(d, NUM_COARSE_CODEBOOKS,
                                            nbitsCoarseQuantizer);
 
-  faiss::IndexIVFPQ *imipq;
+  faiss::IndexIVFPQ *imipq = nullptr;
 
   clock_t tStart, tEnd;
   double tGpu;
   int dRead;
-  bool isLoadead = false;
 
   if (!fileNameIndex.empty()) {
     FILE *f = fopen(fileNameIndex.c_str(), "rb");
@@ -96,11 +95,10 @@ void demo_imipq(int d, int nbitsCoarseQuantizer, int numSubQuantizers,
       fclose(f);
       imipq = dynamic_cast<faiss::IndexIVFPQ *>(
           faiss::read_index(fileNameIndex.c_str()));
-      isLoadead = true;
     }
   }
 
-  if (!isLoadead) {
+  if (!imipq) {
     imipq = new faiss::IndexIVFPQ(&multiIndexCpu, d, nlist, numSubQuantizers,
                                   nbitsSubQuantizer);
     imipq->quantizer_trains_alone = true;
@@ -124,9 +122,10 @@ void demo_imipq(int d, int nbitsCoarseQuantizer, int numSubQuantizers,
     }
 
     { // add
-      size_t maxAddTileSize = 512 * 1024 * 1024;
+      size_t maxAddTileSize = (size_t)8 * 1024 * 1024 * 1024;
       size_t numVecsTile = maxAddTileSize / (d * sizeof(float));
       numVecsTile = std::min(numVecsTile, numIndexingVecs);
+      numVecsTile = std::min(numVecsTile, (size_t)10000);
       numVecsTile = std::max(numVecsTile, (size_t)1);
       for (size_t i = 0; i < numIndexingVecs; i += numVecsTile) {
         size_t currentNumVecsTile = std::min(numVecsTile, numIndexingVecs - i);
@@ -224,7 +223,7 @@ int main(int argc, char **argv) {
   kEnd = std::stoi(argv[17]);
   isFloat = std::stoi(argv[18]);
   numThreads = argc > 19 ? std::stoi(argv[19]) : 1;
-  fileNameIndex = "";
+  fileNameIndex = argc > 20 ? argv[20] : "";
 
   omp_set_num_threads(numThreads);
 
