@@ -161,6 +161,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
       faiss::gpu::GpuIndexIMIPQv2::getInvListsAllocSizePerTypeInfo(
           numIndexingVecs, numSubQuantizers, nbitsSubQuantizer, false,
           indiceOptions);
+
   for (auto &&allocSizePerType : allocSizePerTypeMap) {
     size_t allocSize =
         faiss::gpu::utils::roundUp(allocSizePerType.second, (size_t)256);
@@ -172,6 +173,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
       faiss::gpu::GpuIndexIMIPQv2::getInvListsAllocSizePerTypeInfo(
           numIndexingVecsPerGpu, numSubQuantizers, nbitsSubQuantizer, false,
           indiceOptions);
+
   for (auto &&allocSizePerType : allocSizePerTypeMapPerGpu) {
     size_t allocSize =
         faiss::gpu::utils::roundUp(allocSizePerType.second, (size_t)256);
@@ -212,38 +214,22 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
   config.indicesOptions = indiceOptions;
   config.usePrecomputedTables = true;
 
-  bool isLoadead = false;
+  faiss::Index *indexCpu = nullptr;
+
   if (!fileNameIndex.empty()) {
     FILE *f = fopen(fileNameIndex.c_str(), "rb");
     if (f) {
       fclose(f);
-
-      faiss::IndexIVFPQ *preBuildIndexCpu = dynamic_cast<faiss::IndexIVFPQ *>(
+      tStart = clock();
+      indexCpu = dynamic_cast<faiss::IndexIVFPQ *>(
           faiss::read_index(fileNameIndex.c_str()));
-
-      if (profile) {
-        faiss::gpu::GpuMultipleClonerOptions options;
-        options.memorySpace = config.memorySpace;
-        options.indicesOptions = config.indicesOptions;
-        options.usePrecomputed = config.usePrecomputedTables;
-        options.precomputeCodesOnCpu = config.precomputeCodesOnCpu;
-        options.shard = useShards;
-        options.shard_type = 1;
-
-        initResourcesMultiGpu(ngpus, allocSizePerTypeMapPerGpu,
-                              tempMemoryPerGpu, resVector, devs, allocLogging);
-
-        indexMultiGpu = faiss::gpu::index_cpu_to_gpu_multiple(
-            resVector, devs, preBuildIndexCpu, &options);
-      }
-
-      delete preBuildIndexCpu;
-      isLoadead = true;
+      tEnd = clock();
+      tGpu = (double)(tEnd - tStart) / CLOCKS_PER_SEC;
+      std::cout << "Time to load index from memory: " << tGpu << std::endl;
     }
   }
 
-  if (!isLoadead) {
-    faiss::Index *indexCpu = nullptr;
+  if (!indexCpu) {
     { // indexing
       faiss::gpu::StandardGpuResources res(allocSizePerTypeMap);
       res.setLogMemoryAllocations(allocLogging);
@@ -381,29 +367,32 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
     }
 
     if (!fileNameIndex.empty()) {
+      std::cout << "writing: " << fileNameIndex << "...";
       faiss::write_index(indexCpu, fileNameIndex.c_str());
+      std::cout << "done" << std::endl;
     }
-
-    if (profile) {
-      faiss::gpu::GpuMultipleClonerOptions options;
-      options.memorySpace = config.memorySpace;
-      options.indicesOptions = config.indicesOptions;
-      options.usePrecomputed = config.usePrecomputedTables;
-      options.precomputeCodesOnCpu = config.precomputeCodesOnCpu;
-      options.shard = useShards;
-      options.shard_type = 1;
-
-      std::cout << "Ininting resource for multiple GPUs" << std::endl;
-      initResourcesMultiGpu(ngpus, allocSizePerTypeMapPerGpu, tempMemoryPerGpu,
-                            resVector, devs, allocLogging);
-
-      std::cout << "Moving index from cpu to multiple GPUs: " << std::endl;
-      indexMultiGpu = faiss::gpu::index_cpu_to_gpu_multiple(resVector, devs,
-                                                            indexCpu, &options);
-      std::cout << "Index moved" << std::endl;
-    }
-    delete indexCpu;
   }
+
+  if (profile) {
+    faiss::gpu::GpuMultipleClonerOptions options;
+    options.memorySpace = config.memorySpace;
+    options.indicesOptions = config.indicesOptions;
+    options.usePrecomputed = config.usePrecomputedTables;
+    options.precomputeCodesOnCpu = config.precomputeCodesOnCpu;
+    options.shard = useShards;
+    options.shard_type = 1;
+
+    std::cout << "Ininting resource for multiple GPUs" << std::endl;
+    initResourcesMultiGpu(ngpus, allocSizePerTypeMapPerGpu, tempMemoryPerGpu,
+                          resVector, devs, allocLogging);
+
+    std::cout << "Moving index from cpu to multiple GPUs: " << std::endl;
+    indexMultiGpu = faiss::gpu::index_cpu_to_gpu_multiple(resVector, devs,
+                                                          indexCpu, &options);
+    std::cout << "Index moved" << std::endl;
+  }
+
+  delete indexCpu;
 
   CUDA_VERIFY(cudaMemGetInfo(&devFree, &devTotal));
   std::cout << "-------Memory-------" << std::endl;
