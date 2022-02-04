@@ -428,10 +428,10 @@ void *StandardGpuResourcesImpl::allocMemory(const AllocRequest &req) {
       newReq.space = MemorySpace::Device;
       newReq.type = AllocType::TemporaryMemoryOverflow;
 
-      // if (allocLogging_) {
-      std::cout << "StandardGpuResources: alloc fail " << adjReq.toString()
-                << " (no temp space); retrying as MemorySpace::Device\n";
-      // }
+      if (allocLogging_) {
+        std::cout << "StandardGpuResources: alloc fail " << adjReq.toString()
+                  << " (no temp space); retrying as MemorySpace::Device\n";
+      }
 
       return allocMemory(newReq);
     }
