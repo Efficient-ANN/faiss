@@ -391,9 +391,12 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
                           resVector, devs, allocLogging);
 
     std::cout << "Moving index from cpu to multiple GPUs: " << std::endl;
+    tStart = clock();
     indexMultiGpu = faiss::gpu::index_cpu_to_gpu_multiple(resVector, devs,
                                                           indexCpu, &options);
-    std::cout << "Index moved" << std::endl;
+    tEnd = clock();
+    tGpu = (double)(tEnd - tStart) / CLOCKS_PER_SEC;
+    std::cout << "Index moved in " << tGpu << std::endl;
   }
 
   delete indexCpu;
