@@ -213,6 +213,8 @@ Index *ToGpuCloner::clone_Index(const Index *index)
             config.useFloat16LookupTables = useFloat16;
             config.usePrecomputedTables = usePrecomputed;
             config.precomputeCodesOnCpu = precomputeCodesOnCpu;
+            config.multiIndexConfig.device = device;
+            config.multiIndexConfig.memorySpace = coarseQuantizerMemorySpace;
 
             GpuIndexIMIPQv2 *res = new GpuIndexIMIPQv2(provider, ipq, config);
             return res;
@@ -234,6 +236,8 @@ Index *ToGpuCloner::clone_Index(const Index *index)
             config.useFloat16LookupTables = useFloat16;
             config.usePrecomputedTables = usePrecomputed;
             config.precomputeCodesOnCpu = precomputeCodesOnCpu;
+            config.flatConfig.device = device;
+            config.flatConfig.memorySpace = coarseQuantizerMemorySpace;
 
             GpuIndexIVFPQ *res = new GpuIndexIVFPQ(provider, ipq, config);
 

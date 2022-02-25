@@ -18,6 +18,8 @@ struct GpuClonerOptions {
 
   MemorySpace memorySpace;
 
+  MemorySpace coarseQuantizerMemorySpace;
+
   /// how should indices be stored on index types that support indices
   /// (anything but GpuIndexFlat*)?
   IndicesOptions indicesOptions;

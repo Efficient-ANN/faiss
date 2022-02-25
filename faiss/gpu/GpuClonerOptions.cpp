@@ -11,6 +11,7 @@ namespace faiss { namespace gpu {
 
 GpuClonerOptions::GpuClonerOptions()
     : memorySpace(MemorySpace::Device),
+      coarseQuantizerMemorySpace(MemorySpace::Device),
       indicesOptions(INDICES_64_BIT),
       useFloat16CoarseQuantizer(false),
       useFloat16(false),

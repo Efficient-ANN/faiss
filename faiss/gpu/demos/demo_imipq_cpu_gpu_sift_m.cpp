@@ -27,8 +27,7 @@
 #include <string>
 #include <sys/types.h>
 
-void search(std::vector<faiss::gpu::GpuResourcesProvider *> &resVector,
-            faiss::Index *index, float *queries, int *groundTruth,
+void search(faiss::Index *index, float *queries, int *groundTruth,
             size_t numQueries, int kBegin, int kEnd, int groundTruthK) {
   std::vector<int> kList = {1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048};
   clock_t tStart, tEnd;
@@ -49,11 +48,7 @@ void search(std::vector<faiss::gpu::GpuResourcesProvider *> &resVector,
       index->search(numQueries, queries, k, outDistances.data(),
                     outLabels.data());
 
-      for (auto &&res : resVector) {
-        faiss::gpu::CudaEvent copyEnd(
-            res->getResources()->getDefaultStreamCurrentDevice());
-        copyEnd.cpuWaitOnEvent();
-      }
+      faiss::gpu::synchronizeAllDevices();
 
       tEnd = clock();
       tGpu += (double)(tEnd - tStart) / CLOCKS_PER_SEC;
@@ -429,6 +424,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
       std::cout << "Moving index from cpu to multiple GPUs: " << std::endl;
       indexMultiGpu = faiss::gpu::index_cpu_to_gpu_multiple(resVector, devs,
                                                             indexCpu, &options);
+      faiss::gpu::synchronizeAllDevices();
       std::cout << "Index moved" << std::endl;
     }
     delete indexCpu;
@@ -493,8 +489,8 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
           imipqGpu->setNumProbes(nprobe);
         }
 
-        search(resVector, indexMultiGpu, queries, groundTruth, numQueries,
-               kBegin, kEnd, dRead);
+        search(indexMultiGpu, queries, groundTruth, numQueries, kBegin, kEnd,
+               dRead);
       }
     }
 
