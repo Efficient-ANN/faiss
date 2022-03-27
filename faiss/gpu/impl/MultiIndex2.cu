@@ -79,7 +79,7 @@ int calculateNumQueriesTilePerCodebook(const size_t sizeAvailable, const int n,
                                        const int d, const int numCodebooks,
                                        const int numCentroidsPerCodebook,
                                        const int subK) {
-  constexpr int minNumQueries = 128;
+  constexpr int minNumQueries = 1;
 
   if (n <= minNumQueries) {
     return n;
@@ -101,8 +101,10 @@ int calculateNumQueriesTilePerCodebook(const size_t sizeAvailable, const int n,
   size_t distanceKernelSize =
       distanceBufSize + outDistanceBufSize + outIndiceBufSize;
 
-  size_t multiSequenceSize =
-      (size_t)n * numCodebooks * subK * (sizeof(float) + sizeof(IndexT));
+  const int sizePerQuery =
+      numCodebooks * subK * (sizeof(float) + sizeof(IndexT));
+
+  size_t multiSequenceSize = (size_t)n * sizePerQuery;
 
   size_t requestedSize = distanceKernelSize + multiSequenceSize;
 
@@ -116,22 +118,22 @@ int calculateNumQueriesTilePerCodebook(const size_t sizeAvailable, const int n,
 
   size_t adjustableSize = sizeAvailable - distanceKernelSize;
 
-  const int sizePerQuery =
-      numCodebooks * subK * (sizeof(float) + sizeof(IndexT));
-  int maxNumQueriesTile =
-      std::max(adjustableSize / sizePerQuery, (size_t)minNumQueries);
+  int maxNumQueriesTile = std::min(
+      n, std::max((int)(adjustableSize / sizePerQuery), minNumQueries));
+
   int minNumTiles = utils::divUp(n, maxNumQueriesTile);
   int numQueriesTile = utils::divUp(n, minNumTiles);
 
   // try to align with distance computation kernel
-  constexpr int numQueriesAlignment = 512;
-  int adjNumQueriesTile = utils::roundUp(numQueriesTile, numQueriesAlignment);
+  constexpr size_t numQueriesAlignment = 512;
+  size_t adjNumQueriesTile =
+      utils::roundUp((size_t)numQueriesTile, numQueriesAlignment);
 
   if (adjNumQueriesTile <= maxNumQueriesTile) {
-    return std::min(n, adjNumQueriesTile);
+    return adjNumQueriesTile;
   }
 
-  return std::min(numQueriesTile, maxNumQueriesTile);
+  return numQueriesTile;
 }
 
 template <typename IndexT, typename IndexTVec2>
