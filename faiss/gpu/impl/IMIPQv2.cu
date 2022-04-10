@@ -25,6 +25,7 @@
 #include <faiss/gpu/utils/MatrixMult.cuh>
 #include <faiss/gpu/utils/NoTypeTensor.cuh>
 #include <faiss/gpu/utils/Transpose.cuh>
+#include <iostream>
 #include <limits>
 #include <thrust/host_vector.h>
 #include <unordered_map>
@@ -47,9 +48,11 @@ IMIPQv2::IMIPQv2(GpuResources *resources, MultiIndex2 *quantizer,
   FAISS_ASSERT(pqCentroidData);
 
   FAISS_ASSERT(bitsPerSubQuantizer_ <= 8);
+  FAISS_ASSERT(numSubQuantizerCodes_ <= 256);
   FAISS_ASSERT(dim_ % quantizer_->getNumCodebooks() == 0);
   FAISS_ASSERT(numSubQuantizers_ % quantizer_->getNumCodebooks() == 0);
   FAISS_ASSERT(dim_ % numSubQuantizers_ == 0);
+  FAISS_ASSERT(dimPerSubQuantizer_ > 0);
   FAISS_ASSERT(interleavedLayout || isSupportedPQCodeLength(numSubQuantizers_));
   FAISS_ASSERT(!interleavedLayout); // not supported yet
 
@@ -504,12 +507,15 @@ void IMIPQv2::query(Tensor<float, 2, true> &queries, int nprobe, int k,
 
   int numQueries = queries.getSize(0) / quantizer_->getNumCodebooks();
 
+  std::cout << "numQueries:" << numQueries << std::endl;
+  std::cout << "nprobe:" << nprobe << std::endl;
+
   // Reserve space for the closest coarse centroids
   DeviceTensor<float, 2, true> coarseDistances(
-      resources_, makeTempAlloc(AllocType::Other, stream),
+      resources_, makeTempAlloc(AllocType::CoarseDistancesOutput, stream),
       {numQueries, nprobe});
   DeviceTensor<ushort2, 2, true> coarseIndices(
-      resources_, makeTempAlloc(AllocType::Other, stream),
+      resources_, makeTempAlloc(AllocType::CoarseIndicesOutput, stream),
       {numQueries, nprobe});
 
   // Find the `nprobe` closest coarse centroids; we can use int
@@ -554,7 +560,7 @@ void IMIPQv2::query_split(Tensor<float, 2, true> &queries, int nprobe, int k,
                        quantizer_->getSubDim()});
 
   DeviceTensor<float, 3, true> queriesTranspose(
-      resources_, makeTempAlloc(AllocType::Other, stream),
+      resources_, makeTempAlloc(AllocType::QuerySplitted, stream),
       {quantizer_->getNumCodebooks(), queries.getSize(0),
        quantizer_->getSubDim()});
 
@@ -585,9 +591,17 @@ void IMIPQv2::runCalcTerm3(Tensor<float, 2, true> &queries, int &numQueries,
   auto querySubQuantizerView = queries.view<3>(
       {queries.getSize(0), numSubQuantizersPerCodebook, dimPerSubQuantizer_});
 
+  std::cout << "numSubQuantizersPerCodebook:" << numSubQuantizersPerCodebook
+            << std::endl;
+  std::cout << "queries.getSize(0):" << queries.getSize(0) << std::endl;
+  std::cout << "dimPerSubQuantizer_:" << dimPerSubQuantizer_ << std::endl;
+
   DeviceTensor<float, 3, true> queriesTransposed(
-      resources_, makeTempAlloc(AllocType::Other, stream),
+      resources_, makeTempAlloc(AllocType::QueryTransposed, stream),
       {numSubQuantizersPerCodebook, queries.getSize(0), dimPerSubQuantizer_});
+
+  std::cout << "queriesTransposed.getSizeInBytes():"
+            << (size_t)queriesTransposed.getSizeInBytes() << std::endl;
 
   runTransposeAny(querySubQuantizerView, 0, 1, queriesTransposed, stream);
 
@@ -595,9 +609,16 @@ void IMIPQv2::runCalcTerm3(Tensor<float, 2, true> &queries, int &numQueries,
       {numSubQuantizersPerCodebook, quantizer_->getNumCodebooks(), numQueries,
        dimPerSubQuantizer_});
 
+  std::cout << "numSubQuantizers_:" << numSubQuantizers_ << std::endl;
+  std::cout << "numQueries:" << numQueries << std::endl;
+  std::cout << "numSubQuantizerCodes_:" << numSubQuantizerCodes_ << std::endl;
+
   DeviceTensor<float, 3, true> term3Transposed(
-      resources_, makeTempAlloc(AllocType::Other, stream),
+      resources_, makeTempAlloc(AllocType::Term3Transposed, stream),
       {numSubQuantizers_, numQueries, numSubQuantizerCodes_});
+
+  std::cout << "term3Transposed.getSizeInBytes():"
+            << (size_t)term3Transposed.getSizeInBytes() << std::endl;
 
   runIteratedMatrixMult<false>(term3Transposed, false, queriesTransposedView,
                                false, pqCentroidsMiddleCode_, true, -2.0f, 0.0f,
@@ -627,13 +648,20 @@ void IMIPQv2::runPQPrecomputedCodes_(
 
   int numQueries = queries.getSize(0) / quantizer_->getNumCodebooks();
 
+  std::cout << "numQueries:" << numQueries << std::endl;
+  std::cout << "numSubQuantizers_:" << numSubQuantizers_ << std::endl;
+  std::cout << "numSubQuantizerCodes_:" << numSubQuantizerCodes_ << std::endl;
+
   // Compute precomputed code term 3, - 2 * (x|y_R)
   // This is done via batch MM
   // {sub q} x {(query id)(sub dim) * (code id)(sub dim)'} =>
   // {sub q} x {(query id)(code id)}
   DeviceTensor<float, 3, true> term3Transposed(
-      resources_, makeTempAlloc(AllocType::Other, stream),
+      resources_, makeTempAlloc(AllocType::Term3, stream),
       {numQueries, numSubQuantizers_, numSubQuantizerCodes_});
+
+  std::cout << "term3.getSizeInBytes():"
+            << (size_t)term3Transposed.getSizeInBytes() << std::endl;
 
   int numSubQuantizersPerCodebook =
       numSubQuantizers_ / quantizer_->getNumCodebooks();

@@ -15,6 +15,7 @@
 #include <faiss/gpu/utils/DeviceUtils.h>
 #include <faiss/gpu/utils/MultiSequence.cuh>
 #include <faiss/gpu/utils/Transpose.cuh>
+#include <iostream>
 #include <vector>
 
 namespace faiss {
@@ -92,12 +93,12 @@ int calculateNumQueriesTilePerCodebook(const size_t sizeAvailable, const int n,
   int distanceKernelNumColTiles =
       utils::divUp(numCentroidsPerCodebook, distanceKernelTileCols);
 
-  size_t distanceBufSize =
-      2 * distanceKernelTileRows * distanceKernelTileCols * sizeof(float);
-  size_t outDistanceBufSize = 2 * subK * distanceKernelTileRows *
+  size_t distanceBufSize = 2 * (size_t)distanceKernelTileRows *
+                           distanceKernelTileCols * sizeof(float);
+  size_t outDistanceBufSize = 2 * (size_t)subK * distanceKernelTileRows *
                               distanceKernelNumColTiles * sizeof(float);
-  size_t outIndiceBufSize = 2 * subK * distanceKernelTileRows *
-                            distanceKernelNumColTiles * sizeof(int);
+  size_t outIndiceBufSize = 2 * (size_t)subK * distanceKernelTileRows *
+                            distanceKernelNumColTiles * sizeof(IndexT);
   size_t distanceKernelSize =
       distanceBufSize + outDistanceBufSize + outIndiceBufSize;
 
@@ -112,11 +113,15 @@ int calculateNumQueriesTilePerCodebook(const size_t sizeAvailable, const int n,
     return n;
   }
 
+  size_t adjustableSize = 0;
   if (distanceKernelSize > sizeAvailable) {
-    return std::min(n, minNumQueries);
+    if (multiSequenceSize <= sizeAvailable) {
+      return n;
+    }
+    adjustableSize = sizeAvailable;
+  } else {
+    adjustableSize = sizeAvailable - distanceKernelSize;
   }
-
-  size_t adjustableSize = sizeAvailable - distanceKernelSize;
 
   int maxNumQueriesTile = std::min(
       n, std::max((int)(adjustableSize / sizePerQuery), minNumQueries));
@@ -158,13 +163,24 @@ void MultiIndex2::queryImpl(Tensor<float, 2, true> &subQueries, int k,
 
   auto stream = resources_->getDefaultStreamCurrentDevice();
 
+  std::cout << "numCodebooks_:" << numCodebooks_ << std::endl;
+  std::cout << "numQueriesTilePerCodebook:" << numQueriesTilePerCodebook
+            << std::endl;
+  std::cout << "subK:" << subK << std::endl;
+
   DeviceTensor<float, 3, true> outSubDistances(
-      resources_, makeTempAlloc(AllocType::Other, stream),
+      resources_, makeTempAlloc(AllocType::MultiSequenceInput, stream),
       {numCodebooks_, numQueriesTilePerCodebook, subK});
 
+  std::cout << "outSubDistances.getSizeInBytes():"
+            << (size_t)outSubDistances.getSizeInBytes() << std::endl;
+
   DeviceTensor<IndexT, 3, true> outSubIndices(
-      resources_, makeTempAlloc(AllocType::Other, stream),
+      resources_, makeTempAlloc(AllocType::MultiSequenceInput, stream),
       {numCodebooks_, numQueriesTilePerCodebook, subK});
+
+  std::cout << "outSubIndices.getSizeInBytes():"
+            << (size_t)outSubIndices.getSizeInBytes() << std::endl;
 
   auto allStreams = resources_->getAlternateStreamsCurrentDevice();
   // 2 streams for the first codebook and 2 streams for the second codebook
@@ -230,11 +246,11 @@ void MultiIndex2::queryImpl(Tensor<float, 2, true> &subQueries, int k,
   auto stream = resources_->getDefaultStreamCurrentDevice();
 
   DeviceTensor<float, 3, true> outSubDistances(
-      resources_, makeTempAlloc(AllocType::Other, stream),
+      resources_, makeTempAlloc(AllocType::MultiSequenceInput, stream),
       {numCodebooks_, numQueriesTilePerCodebook, subK});
 
   DeviceTensor<IndexT, 3, true> outSubIndices(
-      resources_, makeTempAlloc(AllocType::Other, stream),
+      resources_, makeTempAlloc(AllocType::MultiSequenceInput, stream),
       {numCodebooks_, numQueriesTilePerCodebook, subK});
 
   auto allStreams = resources_->getAlternateStreamsCurrentDevice();

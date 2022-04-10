@@ -36,6 +36,22 @@ std::string allocTypeToString(AllocType t) {
       return "InvListIndices";
     case AllocType::CoarseQuantizer:
       return "CoarseQuantizer";
+    case AllocType::CoarseDistancesOutput:
+      return "CoarseDistancesOutput";
+    case AllocType::CoarseIndicesOutput:
+      return "CoarseIndicesOutput";
+    case AllocType::MultiSequenceInput:
+      return "MultiSequenceInput";
+    case AllocType::Term3:
+      return "Term3";
+    case AllocType::Term3Transposed:
+      return "Term3Transposed";
+    case AllocType::Query:
+      return "Query";
+    case AllocType::QueryTransposed:
+      return "QueryTransposed";
+    case AllocType::QuerySplitted:
+      return "QuerySplitted";
     default:
       return "Unknown";
   }

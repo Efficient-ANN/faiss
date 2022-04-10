@@ -61,7 +61,23 @@ enum AllocType {
   
   InvListIndices = 14,
 
-  CoarseQuantizer = 15
+  CoarseQuantizer = 15,
+
+  CoarseDistancesOutput = 16,
+
+  CoarseIndicesOutput = 17,
+
+  MultiSequenceInput = 18,
+
+  Term3 = 19,
+
+  Term3Transposed = 20,
+
+  Query = 21,
+
+  QueryTransposed = 22,
+
+  QuerySplitted = 23
 };
 
 /// Convert an AllocType to string
