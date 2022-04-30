@@ -1515,7 +1515,7 @@ void runPQScanMultiPassPrecomputed(Tensor<float, 2, true>& queries,
                                    // output
                                    Tensor<Index::idx_t, 2, true>& outIndices,
                                    GpuResources* res) {
-  constexpr int kMinQueryTileSize = 8;
+  constexpr int kMinQueryTileSize = 1;
   constexpr int kMaxQueryTileSize = 128;
   constexpr int kThrustMemSize = 16384;
 
@@ -1546,11 +1546,16 @@ void runPQScanMultiPassPrecomputed(Tensor<float, 2, true>& queries,
   size_t sizeForFirstSelectPass =
     pass2Chunks * k * (sizeof(float) + sizeof(int));
 
+  size_t maxListLengthSet = nprobe * (size_t) maxListLength;
+
+  // it's impossible to index using an int32 if the following is false
+  FAISS_ASSERT(maxListLengthSet <= (size_t) std::numeric_limits<int>::max());
+
   // How much temporary storage we need per each query
   size_t sizePerQuery =
     2 * // # streams
     ((nprobe * sizeof(int) + sizeof(int)) + // prefixSumOffsets
-     nprobe * maxListLength * sizeof(float) + // allDistances
+     maxListLengthSet * sizeof(float) + // allDistances
      sizeForFirstSelectPass);
 
   int queryTileSize = (int) (sizeAvailable / sizePerQuery);
@@ -1561,10 +1566,12 @@ void runPQScanMultiPassPrecomputed(Tensor<float, 2, true>& queries,
     queryTileSize = kMaxQueryTileSize;
   }
 
-  // FIXME: we should adjust queryTileSize to deal with this, since
-  // indexing is in int32
-  FAISS_ASSERT(queryTileSize * nprobe * maxListLength <=
-         std::numeric_limits<int>::max());
+  if (queryTileSize * maxListLengthSet > 
+    (size_t) std::numeric_limits<int>::max()) {
+    queryTileSize = (int)((size_t) std::numeric_limits<int>::max() / 
+      maxListLengthSet);
+  }
+
 
   // Temporary memory buffers
  // Make sure there is space prior to the start which will be 0, and
@@ -1711,7 +1718,7 @@ void runPQScanMultiPassPrecomputed(// (query id)(probe id)
                                    // output
                                    Tensor<Index::idx_t, 2, true>& outIndices,
                                    GpuResources* res) {
-  constexpr int kMinQueryTileSize = 8;
+  constexpr int kMinQueryTileSize = 1;
   constexpr int kMaxQueryTileSize = 128;
   constexpr int kThrustMemSize = 16384;
 
@@ -1742,11 +1749,16 @@ void runPQScanMultiPassPrecomputed(// (query id)(probe id)
   size_t sizeForFirstSelectPass =
     pass2Chunks * k * (sizeof(float) + sizeof(int));
 
+  size_t maxListLengthSet = nprobe * (size_t) maxListLength;
+
+  // it's impossible to index using an int32 if the following is false
+  FAISS_ASSERT(maxListLengthSet <= (size_t) std::numeric_limits<int>::max());
+
   // How much temporary storage we need per each query
   size_t sizePerQuery =
     2 * // # streams
     ((nprobe * sizeof(int) + sizeof(int)) + // prefixSumOffsets
-     nprobe * maxListLength * sizeof(float) + // allDistances
+     maxListLengthSet * sizeof(float) + // allDistances
      sizeForFirstSelectPass);
 
   int queryTileSize = (int) (sizeAvailable / sizePerQuery);
@@ -1757,10 +1769,11 @@ void runPQScanMultiPassPrecomputed(// (query id)(probe id)
     queryTileSize = kMaxQueryTileSize;
   }
 
-  // FIXME: we should adjust queryTileSize to deal with this, since
-  // indexing is in int32
-  FAISS_ASSERT(queryTileSize * nprobe * maxListLength <=
-         std::numeric_limits<int>::max());
+  if (queryTileSize * maxListLengthSet > 
+    (size_t) std::numeric_limits<int>::max()) {
+    queryTileSize = (int)((size_t) std::numeric_limits<int>::max() / 
+      maxListLengthSet);
+  }
 
   // Temporary memory buffers
  // Make sure there is space prior to the start which will be 0, and
@@ -1906,7 +1919,7 @@ void runPQScanMultiPassPrecomputed(// (query id)(probe id)
                                    // output
                                    Tensor<Index::idx_t, 2, true>& outIndices,
                                    GpuResources* res) {
-  constexpr int kMinQueryTileSize = 8;
+  constexpr int kMinQueryTileSize = 1;
   constexpr int kMaxQueryTileSize = 128;
   constexpr int kThrustMemSize = 16384;
 
@@ -1937,11 +1950,16 @@ void runPQScanMultiPassPrecomputed(// (query id)(probe id)
   size_t sizeForFirstSelectPass =
     pass2Chunks * k * (sizeof(float) + sizeof(int));
 
+  size_t maxListLengthSet = nprobe * (size_t) maxListLength;
+
+  // it's impossible to index using an int32 if the following is false
+  FAISS_ASSERT(maxListLengthSet <= (size_t) std::numeric_limits<int>::max());
+
   // How much temporary storage we need per each query
   size_t sizePerQuery =
     2 * // # streams
     ((nprobe * sizeof(int) + sizeof(int)) + // prefixSumOffsets
-     nprobe * maxListLength * sizeof(float) + // allDistances
+     maxListLengthSet * sizeof(float) + // allDistances
      sizeForFirstSelectPass);
 
   int queryTileSize = (int) (sizeAvailable / sizePerQuery);
@@ -1952,10 +1970,11 @@ void runPQScanMultiPassPrecomputed(// (query id)(probe id)
     queryTileSize = kMaxQueryTileSize;
   }
 
-  // FIXME: we should adjust queryTileSize to deal with this, since
-  // indexing is in int32
-  FAISS_ASSERT(queryTileSize * nprobe * maxListLength <=
-         std::numeric_limits<int>::max());
+  if (queryTileSize * maxListLengthSet > 
+    (size_t) std::numeric_limits<int>::max()) {
+    queryTileSize = (int)((size_t) std::numeric_limits<int>::max() / 
+      maxListLengthSet);
+  }
 
   // Temporary memory buffers
  // Make sure there is space prior to the start which will be 0, and
