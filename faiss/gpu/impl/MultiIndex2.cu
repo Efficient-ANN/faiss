@@ -163,24 +163,13 @@ void MultiIndex2::queryImpl(Tensor<float, 2, true> &subQueries, int k,
 
   auto stream = resources_->getDefaultStreamCurrentDevice();
 
-  std::cout << "numCodebooks_:" << numCodebooks_ << std::endl;
-  std::cout << "numQueriesTilePerCodebook:" << numQueriesTilePerCodebook
-            << std::endl;
-  std::cout << "subK:" << subK << std::endl;
-
   DeviceTensor<float, 3, true> outSubDistances(
       resources_, makeTempAlloc(AllocType::MultiSequenceInput, stream),
       {numCodebooks_, numQueriesTilePerCodebook, subK});
 
-  std::cout << "outSubDistances.getSizeInBytes():"
-            << (size_t)outSubDistances.getSizeInBytes() << std::endl;
-
   DeviceTensor<IndexT, 3, true> outSubIndices(
       resources_, makeTempAlloc(AllocType::MultiSequenceInput, stream),
       {numCodebooks_, numQueriesTilePerCodebook, subK});
-
-  std::cout << "outSubIndices.getSizeInBytes():"
-            << (size_t)outSubIndices.getSizeInBytes() << std::endl;
 
   auto allStreams = resources_->getAlternateStreamsCurrentDevice();
   // 2 streams for the first codebook and 2 streams for the second codebook
