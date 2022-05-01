@@ -1570,6 +1570,7 @@ void runPQScanMultiPassPrecomputed(Tensor<float, 2, true>& queries,
     (size_t) std::numeric_limits<int>::max()) {
     queryTileSize = (int)((size_t) std::numeric_limits<int>::max() / 
       maxListLengthSet);
+    std::max(queryTileSize, kMinQueryTileSize);
   }
 
 
@@ -1773,6 +1774,7 @@ void runPQScanMultiPassPrecomputed(// (query id)(probe id)
     (size_t) std::numeric_limits<int>::max()) {
     queryTileSize = (int)((size_t) std::numeric_limits<int>::max() / 
       maxListLengthSet);
+    std::max(queryTileSize, kMinQueryTileSize);
   }
 
   // Temporary memory buffers
@@ -1974,6 +1976,7 @@ void runPQScanMultiPassPrecomputed(// (query id)(probe id)
     (size_t) std::numeric_limits<int>::max()) {
     queryTileSize = (int)((size_t) std::numeric_limits<int>::max() / 
       maxListLengthSet);
+    std::max(queryTileSize, kMinQueryTileSize);
   }
 
   // Temporary memory buffers
