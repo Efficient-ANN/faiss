@@ -446,12 +446,17 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
             faiss::gpu::GpuIndexIVFPQ *ivfpq =
                 dynamic_cast<faiss::gpu::GpuIndexIVFPQ *>(threadedIndex->at(k));
             ivfpq->setNumProbes(nprobe);
+            std::cout << "Gpu: " << k
+                      << ", maxListLength: " << ivfpq->getMaxListLength()
+                      << std::endl;
           }
         } else {
           // single GPU
           faiss::gpu::GpuIndexIVFPQ *ivfpq =
               dynamic_cast<faiss::gpu::GpuIndexIVFPQ *>(indexMultiGpu);
           ivfpq->setNumProbes(nprobe);
+          std::cout << "Gpu: 0, maxListLength: " << ivfpq->getMaxListLength()
+                    << std::endl;
         }
 
         search(indexMultiGpu, queries, groundTruth, numQueries, kBegin, kEnd,

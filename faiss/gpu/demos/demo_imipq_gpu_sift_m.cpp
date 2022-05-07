@@ -444,12 +444,17 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
                 dynamic_cast<faiss::gpu::GpuIndexIMIPQv2 *>(
                     threadedIndex->at(k));
             imipqGpu->setNumProbes(nprobe);
+            std::cout << "Gpu: " << k
+                      << ", maxListLength: " << imipqGpu->getMaxListLength()
+                      << std::endl;
           }
         } else {
           // single GPU
           faiss::gpu::GpuIndexIMIPQv2 *imipqGpu =
               dynamic_cast<faiss::gpu::GpuIndexIMIPQv2 *>(indexMultiGpu);
           imipqGpu->setNumProbes(nprobe);
+          std::cout << "Gpu: 0, maxListLength: " << imipqGpu->getMaxListLength()
+                    << std::endl;
         }
 
         search(indexMultiGpu, queries, groundTruth, numQueries, kBegin, kEnd,
