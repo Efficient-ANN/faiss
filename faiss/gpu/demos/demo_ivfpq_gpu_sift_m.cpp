@@ -403,7 +403,8 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
   std::cout << "Total: " << devTotal << std::endl;
 
   if (profile) {
-    std::vector<int> numQueriesList = {1, 1000, 8192, 10000};
+    std::vector<int> numQueriesList = {1,      1000,    8192,    10000,
+                                       100000, 1000000, 10000000};
     std::vector<int> nprobeList = {1,  2,   4,   8,   16,   32,
                                    64, 128, 256, 512, 1024, 2048};
 

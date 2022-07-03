@@ -96,22 +96,15 @@ void GpuIndexIMI::copyFrom(const faiss::IndexIVF *index) {
 
   this->nlist = index->nlist;
 
-  if (index->nprobe > quantizer->getCodebookSize()) {
-    // FAISS_THROW_IF_NOT_FMT(index->nprobe <= quantizer->getCodebookSize() *
-    //                                             quantizer->getCodebookSize(),
-    //                        "nprobe must be <= %d",
-    //                        quantizer->getCodebookSize() *
-    //                            quantizer->getCodebookSize());
-    // FAISS_THROW_IF_NOT_FMT(quantizer->getCodebookSize() <= getMaxKSelection(),
-    //                        "Quantizizer codebook size must be <= %d",
-    //                        getMaxKSelection());
-    FAISS_THROW_IF_NOT_FMT(
-      nprobe <= quantizer->getCodebookSize() * quantizer->getCodebookSize(),
-      "nprobe must be <= %d",
-      getMaxKSelection() * getMaxKSelection());
-  } else {
-    FAISS_THROW_IF_NOT_FMT(index->nprobe <= getMaxKSelection(),
-                           "nprobe must be <= %d", getMaxKSelection());
+  FAISS_THROW_IF_NOT_FMT(nprobe <= this->nlist, "nprobe must be <= %d",
+                         this->nlist);
+  FAISS_THROW_IF_NOT_FMT(nprobe <= getMaxKSelection() * getMaxKSelection(),
+                         "nprobe must be <= %d",
+                         getMaxKSelection() * getMaxKSelection());
+
+  if (index->nprobe > getMaxKSelection()) {
+    std::cout << "WARNING: nprobe must be <= " << getMaxKSelection()
+              << " to ensure the correctness of the multi-sequence algorithm";
   }
 
   this->nprobe = index->nprobe;
@@ -175,22 +168,17 @@ int GpuIndexIMI::getNumLists() const { return nlist; }
 void GpuIndexIMI::setNumProbes(int nprobe) {
   FAISS_THROW_IF_NOT_MSG(quantizer->is_trained, "Index must be first trained");
   FAISS_THROW_IF_NOT_MSG(nprobe > 0, "nprobe must be > 0");
-  if (nprobe > quantizer->getCodebookSize()) {
-    // FAISS_THROW_IF_NOT_FMT(
-    //     nprobe <= quantizer->getCodebookSize() * quantizer->getCodebookSize(),
-    //     "nprobe must be <= %d",
-    //     quantizer->getCodebookSize() * quantizer->getCodebookSize());
-    // FAISS_THROW_IF_NOT_FMT(quantizer->getCodebookSize() <= getMaxKSelection(),
-    //                        "Quantizizer codebook size must be <= %d",
-    //                        getMaxKSelection());
-    FAISS_THROW_IF_NOT_FMT(
-      nprobe <= quantizer->getCodebookSize() * quantizer->getCodebookSize(),
-      "nprobe must be <= %d",
-      getMaxKSelection() * getMaxKSelection());
-  } else {
-    FAISS_THROW_IF_NOT_FMT(nprobe <= getMaxKSelection(), "nprobe must be <= %d",
-                           getMaxKSelection());
+  FAISS_THROW_IF_NOT_FMT(nprobe <= this->nlist, "nprobe must be <= %d",
+                         this->nlist);
+  FAISS_THROW_IF_NOT_FMT(nprobe <= getMaxKSelection() * getMaxKSelection(),
+                         "nprobe must be <= %d",
+                         getMaxKSelection() * getMaxKSelection());
+
+  if (nprobe > getMaxKSelection()) {
+    std::cout << "WARNING: nprobe must be <= " << getMaxKSelection()
+              << " to ensure the correctness of the multi-sequence algorithm";
   }
+
   this->nprobe = nprobe;
 }
 

@@ -19,6 +19,7 @@
 #include <faiss/impl/FaissAssert.h>
 #include <faiss/impl/FaissException.h>
 #include <faiss/utils/utils.h>
+#include <iostream>
 #include <limits>
 #include <memory>
 #include <vector>
@@ -128,18 +129,16 @@ void GpuMultiIndex2::copyFrom(const faiss::MultiIndexQuantizer *index) {
     return;
   }
 
-
   if (this->is_trained) {
     data_->reset();
   }
 
-  FAISS_ASSERT(index->pq.centroids.size() ==
-                numVecsPerCodebook_ * this->d);
+  FAISS_ASSERT(index->pq.centroids.size() == numVecsPerCodebook_ * this->d);
 
   auto stream = resources_->getDefaultStream(config_.device);
 
   data_->add(index->pq.centroids.data(),
-              GpuMultiIndex2::NUM_CODEBOOKS * numVecsPerCodebook_, stream);
+             GpuMultiIndex2::NUM_CODEBOOKS * numVecsPerCodebook_, stream);
 
   FAISS_ASSERT(this->is_trained);
 }
@@ -295,32 +294,6 @@ void GpuMultiIndex2::add_with_ids(Index::idx_t n, const float *x,
 
 void GpuMultiIndex2::assign(Index::idx_t n, const float *x,
                             Index::idx_t *labels, Index::idx_t k) const {
-  FAISS_THROW_IF_NOT_MSG(this->is_trained, "Index not trained");
-
-  // For now, only support <= max int results
-  FAISS_THROW_IF_NOT_FMT(n <= (Index::idx_t)std::numeric_limits<int>::max(),
-                         "GPU index only supports up to %d indices",
-                         std::numeric_limits<int>::max());
-
-  if (this->numVecsPerCodebook_ > getMaxKSelection()) {
-    // Maximum k-selection supported is based on the CUDA SDK
-    // FAISS_THROW_IF_NOT_FMT(k <= (Index::idx_t)getMaxKSelection(),
-    //                        "GPU index only supports k <= %d (requested %d)",
-    //                        getMaxKSelection(),
-    //                        (int)k); // select limitation
-    FAISS_THROW_IF_NOT_FMT(k <= (Index::idx_t)getMaxKSelection(),
-                           "GPU index only supports k <= %d (requested %d)",
-                           getMaxKSelection() * getMaxKSelection(),
-                           (int)k); // select limitation
-  } else {
-    FAISS_THROW_IF_NOT_FMT(k <= (Index::idx_t)this->numVecsPerCodebook_ *
-                                    this->numVecsPerCodebook_,
-                           "GPU index only supports k <= %d (requested %d)",
-                           this->numVecsPerCodebook_ *
-                               this->numVecsPerCodebook_,
-                           (int)k); // select limitation
-  }
-
   DeviceScope scope(config_.device);
   auto stream = resources_->getDefaultStream(config_.device);
 
@@ -337,32 +310,6 @@ void GpuMultiIndex2::assign(Index::idx_t n, const float *x,
 void GpuMultiIndex2::assign_pair(Index::idx_t n, const float *x,
                                  std::pair<ushort, ushort> *labels,
                                  Index::idx_t k) const {
-  FAISS_THROW_IF_NOT_MSG(this->is_trained, "Index not trained");
-
-  // For now, only support <= max int results
-  FAISS_THROW_IF_NOT_FMT(n <= (Index::idx_t)std::numeric_limits<int>::max(),
-                         "GPU index only supports up to %d indices",
-                         std::numeric_limits<int>::max());
-
-  if (this->numVecsPerCodebook_ > getMaxKSelection()) {
-    // Maximum k-selection supported is based on the CUDA SDK
-    // FAISS_THROW_IF_NOT_FMT(k <= (Index::idx_t)getMaxKSelection(),
-    //                        "GPU index only supports k <= %d (requested %d)",
-    //                        getMaxKSelection(),
-    //                        (int)k); // select limitation
-    FAISS_THROW_IF_NOT_FMT(k <= (Index::idx_t)getMaxKSelection(),
-                           "GPU index only supports k <= %d (requested %d)",
-                           getMaxKSelection() * getMaxKSelection(),
-                           (int)k); // select limitation
-  } else {
-    FAISS_THROW_IF_NOT_FMT(k <= (Index::idx_t)this->numVecsPerCodebook_ *
-                                    this->numVecsPerCodebook_,
-                           "GPU index only supports k <= %d (requested %d)",
-                           this->numVecsPerCodebook_ *
-                               this->numVecsPerCodebook_,
-                           (int)k); // select limitation
-  }
-
   DeviceScope scope(config_.device);
   auto stream = resources_->getDefaultStream(config_.device);
 
@@ -383,23 +330,20 @@ void GpuMultiIndex2::search(Index::idx_t n, const float *x, Index::idx_t k,
                          "GPU index only supports up to %d indices",
                          std::numeric_limits<int>::max());
 
-  if (this->numVecsPerCodebook_ > getMaxKSelection()) {
-    // Maximum k-selection supported is based on the CUDA SDK
-    // FAISS_THROW_IF_NOT_FMT(k <= (Index::idx_t)getMaxKSelection(),
-    //                        "GPU index only supports k <= %d (requested %d)",
-    //                        getMaxKSelection(),
-    //                        (int)k); // select limitation
-    FAISS_THROW_IF_NOT_FMT(k <= (Index::idx_t)getMaxKSelection(),
-                           "GPU index only supports k <= %d (requested %d)",
-                           getMaxKSelection() * getMaxKSelection(),
-                           (int)k); // select limitation
-  } else {
-    FAISS_THROW_IF_NOT_FMT(k <= (Index::idx_t)this->numVecsPerCodebook_ *
-                                    this->numVecsPerCodebook_,
-                           "GPU index only supports k <= %d (requested %d)",
-                           this->numVecsPerCodebook_ *
-                               this->numVecsPerCodebook_,
-                           (int)k); // select limitation
+  FAISS_THROW_IF_NOT_FMT(k <= (Index::idx_t)this->ntotal,
+                         "GPU index only supports k <= %d (requested %d)",
+                         (int)this->ntotal,
+                         (int)k); // select limitation
+
+  FAISS_THROW_IF_NOT_FMT(k <= (Index::idx_t)getMaxKSelection() *
+                                  getMaxKSelection(),
+                         "GPU index only supports k <= %d (requested %d)",
+                         getMaxKSelection() * getMaxKSelection(),
+                         (int)k); // select limitation
+
+  if (k > (Index::idx_t)getMaxKSelection()) {
+    std::cout << "WARNING: k on multi-index must be <= " << getMaxKSelection()
+              << " to ensure the correctness of the multi-sequence algorithm";
   }
 
   if (n == 0 || k == 0) {
@@ -644,23 +588,20 @@ void GpuMultiIndex2::search_pair(Index::idx_t n, const float *x, Index::idx_t k,
                          "GPU index only supports up to %d indices",
                          std::numeric_limits<int>::max());
 
-  if (this->numVecsPerCodebook_ > getMaxKSelection()) {
-    // Maximum k-selection supported is based on the CUDA SDK
-    // FAISS_THROW_IF_NOT_FMT(k <= (Index::idx_t)getMaxKSelection(),
-    //                        "GPU index only supports k <= %d (requested %d)",
-    //                        getMaxKSelection(),
-    //                        (int)k); // select limitation
-    FAISS_THROW_IF_NOT_FMT(k <= (Index::idx_t)getMaxKSelection(),
-                           "GPU index only supports k <= %d (requested %d)",
-                           getMaxKSelection() * getMaxKSelection(),
-                           (int)k); // select limitation
-  } else {
-    FAISS_THROW_IF_NOT_FMT(k <= (Index::idx_t)this->numVecsPerCodebook_ *
-                                    this->numVecsPerCodebook_,
-                           "GPU index only supports k <= %d (requested %d)",
-                           this->numVecsPerCodebook_ *
-                               this->numVecsPerCodebook_,
-                           (int)k); // select limitation
+  FAISS_THROW_IF_NOT_FMT(k <= (Index::idx_t)this->ntotal,
+                         "GPU index only supports k <= %d (requested %d)",
+                         (int)this->ntotal,
+                         (int)k); // select limitation
+
+  FAISS_THROW_IF_NOT_FMT(k <= (Index::idx_t)getMaxKSelection() *
+                                  getMaxKSelection(),
+                         "GPU index only supports k <= %d (requested %d)",
+                         getMaxKSelection() * getMaxKSelection(),
+                         (int)k); // select limitation
+
+  if (k > (Index::idx_t)getMaxKSelection()) {
+    std::cout << "WARNING: k on multi-index must be <= " << getMaxKSelection()
+              << " to ensure the correctness of the multi-sequence algorithm";
   }
 
   if (n == 0 || k == 0) {
