@@ -56,31 +56,38 @@ void search(faiss::Index *index, float *queries, int *groundTruth,
 
     std::cout << "IMIPQ search time on GPU: " << tGpu / nRuns << std::endl;
 
-    int n_1 = 0, n_10 = 0, n_100 = 0, n_1024 = 0;
-    for (int a = 0; a < numQueries; a++) {
-      faiss::Index::idx_t firstGrounTruthId = groundTruth[a * groundTruthK];
-      for (int b = 0; b < k; b++) {
-        if (outLabels[a * k + b] == firstGrounTruthId) {
-          if (b < 1) {
-            n_1++;
+    if (groundTruth != nullptr) {
+      int n_1 = 0, n_10 = 0, n_100 = 0, n_1024 = 0;
+      for (int a = 0; a < numQueries; a++) {
+        faiss::Index::idx_t firstGrounTruthId = groundTruth[a * groundTruthK];
+        for (int b = 0; b < k; b++) {
+          if (outLabels[a * k + b] == firstGrounTruthId) {
+            if (b < 1) {
+              n_1++;
+            }
+            if (b < 10) {
+              n_10++;
+            }
+            if (b < 100) {
+              n_100++;
+            }
+            if (b < 1024) {
+              n_1024++;
+            }
+            break;
           }
-          if (b < 10) {
-            n_10++;
-          }
-          if (b < 100) {
-            n_100++;
-          }
-          if (b < 1024) {
-            n_1024++;
-          }
-          break;
         }
       }
+      std::cout << "R@1 = " << n_1 / double(numQueries) << std::endl;
+      std::cout << "R@10 = " << n_10 / double(numQueries) << std::endl;
+      std::cout << "R@100 = " << n_100 / double(numQueries) << std::endl;
+      std::cout << "R@1024 = " << n_1024 / double(numQueries) << std::endl;
+    } else {
+      std::cout << "R@1 = NOT COMPUTED" << std::endl;
+      std::cout << "R@10 = NOT COMPUTED" << std::endl;
+      std::cout << "R@100 = NOT COMPUTED" << std::endl;
+      std::cout << "R@1024 = NOT COMPUTED" << std::endl;
     }
-    std::cout << "R@1 = " << n_1 / double(numQueries) << std::endl;
-    std::cout << "R@10 = " << n_10 / double(numQueries) << std::endl;
-    std::cout << "R@100 = " << n_100 / double(numQueries) << std::endl;
-    std::cout << "R@1024 = " << n_1024 / double(numQueries) << std::endl;
   }
 }
 
@@ -416,9 +423,12 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
                                   queriesOffset, &dRead);
     }
     assert(d == dRead);
-    int *groundTruth =
-        faiss::ivecs_read(fileNameGroundTruth.c_str(),
-                          numQueriesList[numQueriesEnd - 1], 0, &dRead);
+    int *groundTruth = nullptr;
+    if (!fileNameGroundTruth.empty()) {
+      groundTruth =
+          faiss::ivecs_read(fileNameGroundTruth.c_str(),
+                            numQueriesList[numQueriesEnd - 1], 0, &dRead);
+    }
 
     CUDA_VERIFY(cudaMemGetInfo(&devFree, &devTotal));
     std::cout << "-------Memory-------" << std::endl;

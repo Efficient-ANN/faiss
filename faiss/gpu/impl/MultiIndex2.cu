@@ -12,6 +12,7 @@
 #include <faiss/gpu/impl/L2Norm.cuh>
 #include <faiss/gpu/impl/MultiIndex2.cuh>
 #include <faiss/gpu/impl/VectorResidual.cuh>
+#include <faiss/gpu/utils/DeviceDefs.cuh>
 #include <faiss/gpu/utils/DeviceUtils.h>
 #include <faiss/gpu/utils/MultiSequence.cuh>
 #include <faiss/gpu/utils/Transpose.cuh>
@@ -157,6 +158,7 @@ void MultiIndex2::queryImpl(Tensor<float, 2, true> &subQueries, int k,
   int numSubQueries = subQueries.getSize(0);
   int numSubQueriesPerCodebook = numSubQueries / numCodebooks_;
   int subK = std::min(k, numCentroidsPerCodebook_);
+  subK = std::min(subK, (int)GPU_MAX_SELECTION_K);
   int numQueriesTilePerCodebook = calculateNumQueriesTilePerCodebook<IndexT>(
       sizeAvailable, numSubQueriesPerCodebook, dimPerCodebook_, numCodebooks_,
       numCentroidsPerCodebook_, subK);
@@ -228,6 +230,7 @@ void MultiIndex2::queryImpl(Tensor<float, 2, true> &subQueries, int k,
   int numSubQueries = subQueries.getSize(0);
   int numSubQueriesPerCodebook = numSubQueries / numCodebooks_;
   int subK = std::min(k, numCentroidsPerCodebook_);
+  subK = std::min(subK, (int)GPU_MAX_SELECTION_K);
   int numQueriesTilePerCodebook = calculateNumQueriesTilePerCodebook<IndexT>(
       sizeAvailable, numSubQueriesPerCodebook, dimPerCodebook_, numCodebooks_,
       numCentroidsPerCodebook_, subK);

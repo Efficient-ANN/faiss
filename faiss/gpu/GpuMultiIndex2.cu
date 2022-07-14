@@ -343,7 +343,8 @@ void GpuMultiIndex2::search(Index::idx_t n, const float *x, Index::idx_t k,
 
   if (k > (Index::idx_t)getMaxKSelection()) {
     std::cout << "WARNING: k on multi-index must be <= " << getMaxKSelection()
-              << " to ensure the correctness of the multi-sequence algorithm";
+              << " to ensure the correctness of the multi-sequence algorithm"
+              << std::endl;
   }
 
   if (n == 0 || k == 0) {
@@ -601,7 +602,8 @@ void GpuMultiIndex2::search_pair(Index::idx_t n, const float *x, Index::idx_t k,
 
   if (k > (Index::idx_t)getMaxKSelection()) {
     std::cout << "WARNING: k on multi-index must be <= " << getMaxKSelection()
-              << " to ensure the correctness of the multi-sequence algorithm";
+              << " to ensure the correctness of the multi-sequence algorithm"
+              << std::endl;
   }
 
   if (n == 0 || k == 0) {

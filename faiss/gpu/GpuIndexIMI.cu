@@ -104,7 +104,8 @@ void GpuIndexIMI::copyFrom(const faiss::IndexIVF *index) {
 
   if (index->nprobe > getMaxKSelection()) {
     std::cout << "WARNING: nprobe must be <= " << getMaxKSelection()
-              << " to ensure the correctness of the multi-sequence algorithm";
+              << " to ensure the correctness of the multi-sequence algorithm"
+              << std::endl;
   }
 
   this->nprobe = index->nprobe;
@@ -176,7 +177,8 @@ void GpuIndexIMI::setNumProbes(int nprobe) {
 
   if (nprobe > getMaxKSelection()) {
     std::cout << "WARNING: nprobe must be <= " << getMaxKSelection()
-              << " to ensure the correctness of the multi-sequence algorithm";
+              << " to ensure the correctness of the multi-sequence algorithm"
+              << std::endl;
   }
 
   this->nprobe = nprobe;
