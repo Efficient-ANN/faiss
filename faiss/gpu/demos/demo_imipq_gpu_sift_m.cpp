@@ -37,56 +37,70 @@ void search(faiss::Index *index, float *queries, int *groundTruth,
     int k = kList[i];
     std::cout << "k: " << k << std::endl;
 
-    std::vector<float> outDistances(numQueries * k);
-    std::vector<faiss::Index::idx_t> outLabels(numQueries * k);
+    try {
+      std::vector<float> outDistances(numQueries * k);
+      std::vector<faiss::Index::idx_t> outLabels(numQueries * k);
 
-    tGpu = 0;
-    constexpr int nRuns = 5;
-    for (int j = 0; j < nRuns; j++) {
-      tStart = clock();
+      tGpu = 0;
+      constexpr int nRuns = 5;
+      for (int j = 0; j < nRuns; j++) {
+        tStart = clock();
 
-      index->search(numQueries, queries, k, outDistances.data(),
-                    outLabels.data());
+        index->search(numQueries, queries, k, outDistances.data(),
+                      outLabels.data());
 
-      faiss::gpu::synchronizeAllDevices();
+        faiss::gpu::synchronizeAllDevices();
 
-      tEnd = clock();
-      tGpu += (double)(tEnd - tStart) / CLOCKS_PER_SEC;
-    }
+        tEnd = clock();
+        tGpu += (double)(tEnd - tStart) / CLOCKS_PER_SEC;
+      }
 
-    std::cout << "IMIPQ search time on GPU: " << tGpu / nRuns << std::endl;
+      std::cout << "IMIPQ search time on GPU: " << tGpu / nRuns << std::endl;
 
-    if (groundTruth != nullptr) {
-      int n_1 = 0, n_10 = 0, n_100 = 0, n_1024 = 0;
-      for (int a = 0; a < numQueries; a++) {
-        faiss::Index::idx_t firstGrounTruthId = groundTruth[a * groundTruthK];
-        for (int b = 0; b < k; b++) {
-          if (outLabels[a * k + b] == firstGrounTruthId) {
-            if (b < 1) {
-              n_1++;
+      if (groundTruth != nullptr) {
+        int n_1 = 0, n_10 = 0, n_100 = 0, n_1024 = 0;
+        for (int a = 0; a < numQueries; a++) {
+          faiss::Index::idx_t firstGrounTruthId = groundTruth[a * groundTruthK];
+          for (int b = 0; b < k; b++) {
+            if (outLabels[a * k + b] == firstGrounTruthId) {
+              if (b < 1) {
+                n_1++;
+              }
+              if (b < 10) {
+                n_10++;
+              }
+              if (b < 100) {
+                n_100++;
+              }
+              if (b < 1024) {
+                n_1024++;
+              }
+              break;
             }
-            if (b < 10) {
-              n_10++;
-            }
-            if (b < 100) {
-              n_100++;
-            }
-            if (b < 1024) {
-              n_1024++;
-            }
-            break;
           }
         }
+        std::cout << "R@1 = " << n_1 / double(numQueries) << std::endl;
+        std::cout << "R@10 = " << n_10 / double(numQueries) << std::endl;
+        std::cout << "R@100 = " << n_100 / double(numQueries) << std::endl;
+        std::cout << "R@1024 = " << n_1024 / double(numQueries) << std::endl;
+      } else {
+        std::cout << "R@1 = NOT COMPUTED" << std::endl;
+        std::cout << "R@10 = NOT COMPUTED" << std::endl;
+        std::cout << "R@100 = NOT COMPUTED" << std::endl;
+        std::cout << "R@1024 = NOT COMPUTED" << std::endl;
       }
-      std::cout << "R@1 = " << n_1 / double(numQueries) << std::endl;
-      std::cout << "R@10 = " << n_10 / double(numQueries) << std::endl;
-      std::cout << "R@100 = " << n_100 / double(numQueries) << std::endl;
-      std::cout << "R@1024 = " << n_1024 / double(numQueries) << std::endl;
-    } else {
-      std::cout << "R@1 = NOT COMPUTED" << std::endl;
-      std::cout << "R@10 = NOT COMPUTED" << std::endl;
-      std::cout << "R@100 = NOT COMPUTED" << std::endl;
-      std::cout << "R@1024 = NOT COMPUTED" << std::endl;
+    } catch (const std::exception &e) {
+      faiss::gpu::synchronizeAllDevices();
+      std::cout << "K EXCEPTION: " << e.what() << std::endl;
+      if (i == 0 || i == kBegin) {
+        throw;
+      }
+    } catch (...) {
+      faiss::gpu::synchronizeAllDevices();
+      std::cout << "K UNKNOWN EXCEPTION" << std::endl;
+      if (i == 0 || i == kBegin) {
+        throw;
+      }
     }
   }
 }
@@ -406,8 +420,9 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
   std::cout << "Total: " << devTotal << std::endl;
 
   if (profile) {
-    std::vector<int> numQueriesList = {1,      1000,    8192,    10000,
-                                       100000, 1000000, 10000000};
+    std::vector<int> numQueriesList = {
+        1,      1000,   8192,   10000,   100000,  16384,   32768,   65536,
+        131072, 262144, 524288, 1048576, 2097152, 4194304, 8388608, 16777216};
     std::vector<int> nprobeList = {
         1,    2,    4,    8,    16,   32,   64,   128,  256,   512,   1024,
         2048, 2194, 2352, 2521, 2702, 2896, 4096, 8192, 16384, 32768, 65536};
@@ -440,36 +455,49 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
       int numQueries = numQueriesList[i];
       std::cout << "numOfQueries: " << numQueries
                 << " ===============" << std::endl;
-      for (int j = nprobeBegin > 0 ? nprobeBegin : 0;
-           j < nprobeEnd && j < nprobeList.size(); j++) {
-        int nprobe = nprobeList[j];
-        std::cout << "nprobe: " << nprobe << "---------" << std::endl;
+      try {
+        for (int j = nprobeBegin > 0 ? nprobeBegin : 0;
+             j < nprobeEnd && j < nprobeList.size(); j++) {
+          int nprobe = nprobeList[j];
+          std::cout << "nprobe: " << nprobe << "---------" << std::endl;
 
-        faiss::ThreadedIndex<faiss::Index> *threadedIndex =
-            dynamic_cast<faiss::ThreadedIndex<faiss::Index> *>(indexMultiGpu);
+          try {
+            faiss::ThreadedIndex<faiss::Index> *threadedIndex =
+                dynamic_cast<faiss::ThreadedIndex<faiss::Index> *>(
+                    indexMultiGpu);
 
-        if (threadedIndex) {
-          // multi GPU
-          for (int k = 0; k < threadedIndex->count(); k++) {
-            faiss::gpu::GpuIndexIMIPQv2 *imipqGpu =
-                dynamic_cast<faiss::gpu::GpuIndexIMIPQv2 *>(
-                    threadedIndex->at(k));
-            imipqGpu->setNumProbes(nprobe);
-            std::cout << "Gpu: " << k
-                      << ", maxListLength: " << imipqGpu->getMaxListLength()
-                      << std::endl;
+            if (threadedIndex) {
+              // multi GPU
+              for (int k = 0; k < threadedIndex->count(); k++) {
+                faiss::gpu::GpuIndexIMIPQv2 *imipqGpu =
+                    dynamic_cast<faiss::gpu::GpuIndexIMIPQv2 *>(
+                        threadedIndex->at(k));
+                imipqGpu->setNumProbes(nprobe);
+                std::cout << "Gpu: " << k
+                          << ", maxListLength: " << imipqGpu->getMaxListLength()
+                          << std::endl;
+              }
+            } else {
+              // single GPU
+              faiss::gpu::GpuIndexIMIPQv2 *imipqGpu =
+                  dynamic_cast<faiss::gpu::GpuIndexIMIPQv2 *>(indexMultiGpu);
+              imipqGpu->setNumProbes(nprobe);
+              std::cout << "Gpu: 0, maxListLength: "
+                        << imipqGpu->getMaxListLength() << std::endl;
+            }
+
+            search(indexMultiGpu, queries, groundTruth, numQueries, kBegin,
+                   kEnd, dRead);
+
+          } catch (...) {
+            std::cout << "NPROBE UNKNOWN EXCEPTION" << std::endl;
+            if (j == 0 || j == nprobeBegin) {
+              throw;
+            }
           }
-        } else {
-          // single GPU
-          faiss::gpu::GpuIndexIMIPQv2 *imipqGpu =
-              dynamic_cast<faiss::gpu::GpuIndexIMIPQv2 *>(indexMultiGpu);
-          imipqGpu->setNumProbes(nprobe);
-          std::cout << "Gpu: 0, maxListLength: " << imipqGpu->getMaxListLength()
-                    << std::endl;
         }
-
-        search(indexMultiGpu, queries, groundTruth, numQueries, kBegin, kEnd,
-               dRead);
+      } catch (...) {
+        std::cout << "QUERY UNKNOWN EXCEPTION" << std::endl;
       }
     }
 
