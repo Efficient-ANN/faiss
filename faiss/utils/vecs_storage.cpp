@@ -1,6 +1,6 @@
-#include <cassert>
 #include <cstdio>
 #include <cstdlib>
+#include <faiss/impl/FaissAssert.h>
 #include <faiss/utils/vecs_storage.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -19,16 +19,21 @@ TVec *vecs_read(const char *fileName, size_t num, size_t numOffset, int *dim) {
   size_t numElementsRead;
   int currentDimension;
   numElementsRead = fread(&currentDimension, sizeof(int), 1, f);
-  assert(numElementsRead == 1 || !"could not read vector dimension");
-  assert((currentDimension > 0 && currentDimension < 1000000) ||
-         !"unreasonable dimension");
+  FAISS_THROW_IF_NOT_FMT(numElementsRead == 1,
+                         "could not read vector dimension: %d",
+                         numElementsRead);
+  FAISS_THROW_IF_NOT_FMT((currentDimension > 0 && currentDimension < 1000000),
+                         "unreasonable dimension: %d", currentDimension);
   struct stat st;
   fstat(fileno(f), &st);
   size_t fileSize = st.st_size;
   size_t rowSize = currentDimension * sizeof(TLoad) + sizeof(int);
   fseek(f, numOffset * rowSize, SEEK_SET);
-  assert(fileSize % rowSize == 0 || !"weird file size");
-  assert(num <= fileSize / rowSize - numOffset || !"invalid number of vectors");
+  FAISS_THROW_IF_NOT_FMT(fileSize % rowSize == 0, "weird file size: %zu, %zu",
+                         fileSize, rowSize);
+  FAISS_THROW_IF_NOT_FMT(num <= fileSize / rowSize - numOffset,
+                         "invalid number of vectors: %zu, %zu, %zu, %zu", num,
+                         fileSize, rowSize, numOffset);
 
   TVec *vecs = new TVec[num * currentDimension];
   *dim = currentDimension;
@@ -37,7 +42,8 @@ TVec *vecs_read(const char *fileName, size_t num, size_t numOffset, int *dim) {
   TLoad buffer[currentDimension];
   for (size_t i = 0; i < num; i++) {
     numElementsRead += fread(&currentDimension, sizeof(int), 1, f);
-    assert((currentDimension == *dim) || !"weird dimension");
+    FAISS_THROW_IF_NOT_FMT((currentDimension == *dim),
+                           "weird dimension: %d, %d", currentDimension, *dim);
     TVec *currentVec = vecs + i * currentDimension;
 
     if (sizeof(TVec) == sizeof(TLoad)) {
@@ -52,8 +58,9 @@ TVec *vecs_read(const char *fileName, size_t num, size_t numOffset, int *dim) {
     }
   }
   fclose(f);
-  assert(numElementsRead == num * (currentDimension + 1) ||
-         !"could not read whole file");
+  FAISS_THROW_IF_NOT_FMT(numElementsRead == num * (currentDimension + 1),
+                         "could not read whole file: %zu, %zu, %d",
+                         numElementsRead, num, currentDimension);
   return vecs;
 }
 
