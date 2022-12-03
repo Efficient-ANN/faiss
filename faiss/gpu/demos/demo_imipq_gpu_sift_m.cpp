@@ -419,9 +419,11 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
   std::cout << "Free: " << devFree << std::endl;
   std::cout << "Total: " << devTotal << std::endl;
 
+  numQueriesEnd = std::min(numQueriesEnd, (int)numQueriesList.size());
+
   if (profile) {
     std::vector<int> numQueriesList = {
-        1,      1000,   8192,   10000,   100000,  16384,   32768,   65536,
+        1,      1000,   8192,   10000,   16384,   32768,   65536,   100000,
         131072, 262144, 524288, 1048576, 2097152, 4194304, 8388608, 16777216};
     std::vector<int> nprobeList = {
         1,    2,    4,    8,    16,   32,   64,   128,  256,   512,   1024,
@@ -450,8 +452,8 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
     std::cout << "Free: " << devFree << std::endl;
     std::cout << "Total: " << devTotal << std::endl;
 
-    for (int i = numQueriesBegin > 0 ? numQueriesBegin : 0;
-         i < numQueriesEnd && i < numQueriesList.size(); i++) {
+    for (int i = numQueriesBegin > 0 ? numQueriesBegin : 0; i < numQueriesEnd;
+         i++) {
       int numQueries = numQueriesList[i];
       std::cout << "numOfQueries: " << numQueries
                 << " ===============" << std::endl;
