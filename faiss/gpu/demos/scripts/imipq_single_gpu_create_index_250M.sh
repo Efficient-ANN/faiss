@@ -11,7 +11,9 @@
 # Num. GPUs: 1
 # Tempo esperado: 2:00:00
 
-module load boost/1.73_gnu cmake/3.17.3 gcc/10.2
+module load boost/1.73_gnu cmake/3.17.3 gcc/7.4_sequana cuda/11.8
+module load /scratch/app/modulos/sequana/current openmpi/gnu/4.0.1_sequana
+
 
 set -x
 
