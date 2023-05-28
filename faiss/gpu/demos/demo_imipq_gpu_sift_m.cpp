@@ -478,6 +478,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
                     dynamic_cast<faiss::gpu::GpuIndexIMIPQv2 *>(
                         threadedIndex->at(k));
                 imipqGpu->setNumProbes(nprobe);
+                imipqGpu->verbose = verbose;
                 std::cout << "Gpu: " << k
                           << ", maxListLength: " << imipqGpu->getMaxListLength()
                           << ", nlist: " << imipqGpu->nlist
@@ -489,6 +490,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
               faiss::gpu::GpuIndexIMIPQv2 *imipqGpu =
                   dynamic_cast<faiss::gpu::GpuIndexIMIPQv2 *>(indexMultiGpu);
               imipqGpu->setNumProbes(nprobe);
+              imipqGpu->verbose = verbose;
               std::cout << "Gpu: 0, maxListLength: " << imipqGpu->getMaxListLength()
                         << ", nlist: " << imipqGpu->nlist
                         << ", ntotal: " << imipqGpu->ntotal
