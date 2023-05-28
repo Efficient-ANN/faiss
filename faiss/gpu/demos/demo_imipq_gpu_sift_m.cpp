@@ -152,7 +152,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
                 int numQueriesBegin, int numQueriesEnd, int nprobeBegin,
                 int nprobeEnd, int kBegin, int kEnd, int ngpus, bool useShards,
                 size_t safeMemMargin, std::string fileNameCoarseQuantizer,
-                std::string fileNameIndex, bool profile, bool allocLogging) {
+                std::string fileNameIndex, bool profile, bool allocLogging, bool verbose) {
   size_t devFree = 0;
   size_t devTotal = 0;
   constexpr int maxPageSize = 2 * 1024 * 1024; // 2MB
@@ -254,6 +254,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
       imipqGpu = new faiss::gpu::GpuIndexIMIPQv2(&res, d, coarseCodebookSize,
                                                  numSubQuantizers,
                                                  nbitsSubQuantizer, config);
+      imipqGpu->verbose = verbose;
 
       { // train
         bool storeCoarseQuantizer = true;
@@ -397,6 +398,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
     options.precomputeCodesOnCpu = config.precomputeCodesOnCpu;
     options.shard = useShards;
     options.shard_type = 1;
+    options.verbose = verbose;
 
     std::cout << "Ininting resource for multiple GPUs" << std::endl;
     initResourcesMultiGpu(ngpus, allocSizePerTypeMapPerGpu, tempMemoryPerGpu,
@@ -420,6 +422,8 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
   std::cout << "Total: " << devTotal << std::endl;
 
   if (profile) {
+    indexMultiGpu->verbose = verbose;
+    
     std::vector<int> numQueriesList = {
         1,      1000,   8192,   10000,   16384,   32768,   65536,   100000,
         131072, 262144, 524288, 1048576, 2097152, 4194304, 8388608, 16777216};
@@ -476,6 +480,8 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
                 imipqGpu->setNumProbes(nprobe);
                 std::cout << "Gpu: " << k
                           << ", maxListLength: " << imipqGpu->getMaxListLength()
+                          << ", nlist: " << imipqGpu->nlist
+                          << ", ntotal: " << imipqGpu->ntotal
                           << std::endl;
               }
             } else {
@@ -483,8 +489,10 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
               faiss::gpu::GpuIndexIMIPQv2 *imipqGpu =
                   dynamic_cast<faiss::gpu::GpuIndexIMIPQv2 *>(indexMultiGpu);
               imipqGpu->setNumProbes(nprobe);
-              std::cout << "Gpu: 0, maxListLength: "
-                        << imipqGpu->getMaxListLength() << std::endl;
+              std::cout << "Gpu: 0, maxListLength: " << imipqGpu->getMaxListLength()
+                        << ", nlist: " << imipqGpu->nlist
+                        << ", ntotal: " << imipqGpu->ntotal
+                        << std::endl;
             }
 
             search(indexMultiGpu, queries, groundTruth, numQueries, kBegin,
@@ -521,7 +529,7 @@ int main(int argc, char **argv) {
 
   int d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer, queriesOffset,
       numQueriesBegin, numQueriesEnd, kBegin, kEnd, nprobeBegin, nprobeEnd,
-      isFloat, numThreads, ngpus, useShards, profile, allocLogging;
+      isFloat, numThreads, ngpus, useShards, profile, allocLogging, verbose;
   size_t numTrainingVecs, numIndexingVecs;
   std::string fileNameTraining, fileNameIndexing, fileNameQueries,
       fileNameGroundTruth, fileNameCoarseQuantizer, fileNameIndex;
@@ -553,6 +561,7 @@ int main(int argc, char **argv) {
   fileNameIndex = argc > 24 ? argv[24] : "";
   profile = argc > 25 ? std::stoi(argv[25]) : 1;
   allocLogging = argc > 26 ? std::stoi(argv[26]) : 0;
+  verbose = argc > 27 ? std::stoi(argv[27]) : 0;
 
   omp_set_num_threads(numThreads);
 
@@ -565,7 +574,7 @@ int main(int argc, char **argv) {
                      fileNameGroundTruth, numQueriesBegin, numQueriesEnd,
                      nprobeBegin, nprobeEnd, kBegin, kEnd, ngpus, useShards,
                      safeMemMargin, fileNameCoarseQuantizer, fileNameIndex,
-                     profile, allocLogging);
+                     profile, allocLogging, verbose);
   } else {
     demo_imipq<false>(d, coarseCodebookSize, numSubQuantizers,
                       nbitsSubQuantizer, fileNameTraining, numTrainingVecs,
@@ -573,7 +582,7 @@ int main(int argc, char **argv) {
                       queriesOffset, fileNameGroundTruth, numQueriesBegin,
                       numQueriesEnd, nprobeBegin, nprobeEnd, kBegin, kEnd,
                       ngpus, useShards, safeMemMargin, fileNameCoarseQuantizer,
-                      fileNameIndex, profile, allocLogging);
+                      fileNameIndex, profile, allocLogging, verbose);
   }
   return 0;
 }
