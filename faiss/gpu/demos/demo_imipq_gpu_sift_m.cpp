@@ -28,10 +28,14 @@
 #include <sys/types.h>
 
 void search(faiss::Index *index, float *queries, int *groundTruth,
-            size_t numQueries, int kBegin, int kEnd, int groundTruthK) {
+            size_t numQueries, int kBegin, int kEnd, int groundTruthK, int nRuns) {
   std::vector<int> kList = {1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048};
   clock_t tStart, tEnd;
   double tGpu;
+
+  if (nRuns <= 0) {
+    nRuns = 1;
+  }
 
   for (int i = kBegin > 0 ? kBegin : 0; i < kEnd && i < kList.size(); i++) {
     int k = kList[i];
@@ -42,7 +46,6 @@ void search(faiss::Index *index, float *queries, int *groundTruth,
       std::vector<faiss::Index::idx_t> outLabels(numQueries * k);
 
       tGpu = 0;
-      constexpr int nRuns = 5;
       for (int j = 0; j < nRuns; j++) {
         tStart = clock();
 
@@ -152,7 +155,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
                 int numQueriesBegin, int numQueriesEnd, int nprobeBegin,
                 int nprobeEnd, int kBegin, int kEnd, int ngpus, bool useShards,
                 size_t safeMemMargin, std::string fileNameCoarseQuantizer,
-                std::string fileNameIndex, bool profile, bool allocLogging, bool verbose) {
+                std::string fileNameIndex, bool profile, bool allocLogging, bool verbose, int nRuns) {
   size_t devFree = 0;
   size_t devTotal = 0;
   constexpr int maxPageSize = 2 * 1024 * 1024; // 2MB
@@ -498,7 +501,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
             }
 
             search(indexMultiGpu, queries, groundTruth, numQueries, kBegin,
-                   kEnd, dRead);
+                   kEnd, dRead, nRuns);
 
           } catch (...) {
             std::cout << "NPROBE UNKNOWN EXCEPTION" << std::endl;
@@ -531,7 +534,7 @@ int main(int argc, char **argv) {
 
   int d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer, queriesOffset,
       numQueriesBegin, numQueriesEnd, kBegin, kEnd, nprobeBegin, nprobeEnd,
-      isFloat, numThreads, ngpus, useShards, profile, allocLogging, verbose;
+      isFloat, numThreads, ngpus, useShards, profile, allocLogging, verbose, nRuns;
   size_t numTrainingVecs, numIndexingVecs;
   std::string fileNameTraining, fileNameIndexing, fileNameQueries,
       fileNameGroundTruth, fileNameCoarseQuantizer, fileNameIndex;
@@ -564,6 +567,7 @@ int main(int argc, char **argv) {
   profile = argc > 25 ? std::stoi(argv[25]) : 1;
   allocLogging = argc > 26 ? std::stoi(argv[26]) : 0;
   verbose = argc > 27 ? std::stoi(argv[27]) : 0;
+  nRuns = argc > 28 ? std::stoi(argv[28]) : 5;
 
   omp_set_num_threads(numThreads);
 
@@ -576,7 +580,7 @@ int main(int argc, char **argv) {
                      fileNameGroundTruth, numQueriesBegin, numQueriesEnd,
                      nprobeBegin, nprobeEnd, kBegin, kEnd, ngpus, useShards,
                      safeMemMargin, fileNameCoarseQuantizer, fileNameIndex,
-                     profile, allocLogging, verbose);
+                     profile, allocLogging, verbose, nRuns);
   } else {
     demo_imipq<false>(d, coarseCodebookSize, numSubQuantizers,
                       nbitsSubQuantizer, fileNameTraining, numTrainingVecs,
@@ -584,7 +588,7 @@ int main(int argc, char **argv) {
                       queriesOffset, fileNameGroundTruth, numQueriesBegin,
                       numQueriesEnd, nprobeBegin, nprobeEnd, kBegin, kEnd,
                       ngpus, useShards, safeMemMargin, fileNameCoarseQuantizer,
-                      fileNameIndex, profile, allocLogging, verbose);
+                      fileNameIndex, profile, allocLogging, verbose, nRuns);
   }
   return 0;
 }
