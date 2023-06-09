@@ -29,65 +29,82 @@
 #include <sys/types.h>
 
 void search(faiss::Index *index, float *queries, int *groundTruth,
-            size_t numQueries, int kBegin, int kEnd, int groundTruthK) {
+            size_t numQueries, int kBegin, int kEnd, int groundTruthK, int nRuns) {
   std::vector<int> kList = {1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048};
   clock_t tStart, tEnd;
   double tGpu;
+
+  if (nRuns <= 0) {
+    nRuns = 1;
+  }
 
   for (int i = kBegin > 0 ? kBegin : 0; i < kEnd && i < kList.size(); i++) {
     int k = kList[i];
     std::cout << "k: " << k << std::endl;
 
-    std::vector<float> outDistances(numQueries * k);
-    std::vector<faiss::Index::idx_t> outLabels(numQueries * k);
+    try {
+      std::vector<float> outDistances(numQueries * k);
+      std::vector<faiss::Index::idx_t> outLabels(numQueries * k);
 
-    tGpu = 0;
-    constexpr int nRuns = 5;
-    for (int j = 0; j < nRuns; j++) {
-      tStart = clock();
+      tGpu = 0;
+      for (int j = 0; j < nRuns; j++) {
+        tStart = clock();
 
-      index->search(numQueries, queries, k, outDistances.data(),
-                    outLabels.data());
+        index->search(numQueries, queries, k, outDistances.data(),
+                      outLabels.data());
 
-      faiss::gpu::synchronizeAllDevices();
+        faiss::gpu::synchronizeAllDevices();
 
-      tEnd = clock();
-      tGpu += (double)(tEnd - tStart) / CLOCKS_PER_SEC;
-    }
+        tEnd = clock();
+        tGpu += (double)(tEnd - tStart) / CLOCKS_PER_SEC;
+      }
 
-    std::cout << "IVFPQ search time on GPU: " << tGpu / nRuns << std::endl;
+      std::cout << "IVFPQ search time on GPU: " << tGpu / nRuns << std::endl;
 
-    if (groundTruth != nullptr) {
-      int n_1 = 0, n_10 = 0, n_100 = 0, n_1024 = 0;
-      for (int a = 0; a < numQueries; a++) {
-        faiss::Index::idx_t firstGrounTruthId = groundTruth[a * groundTruthK];
-        for (int b = 0; b < k; b++) {
-          if (outLabels[a * k + b] == firstGrounTruthId) {
-            if (b < 1) {
-              n_1++;
+      if (groundTruth != nullptr) {
+        int n_1 = 0, n_10 = 0, n_100 = 0, n_1024 = 0;
+        for (int a = 0; a < numQueries; a++) {
+          faiss::Index::idx_t firstGrounTruthId = groundTruth[a * groundTruthK];
+          for (int b = 0; b < k; b++) {
+            if (outLabels[a * k + b] == firstGrounTruthId) {
+              if (b < 1) {
+                n_1++;
+              }
+              if (b < 10) {
+                n_10++;
+              }
+              if (b < 100) {
+                n_100++;
+              }
+              if (b < 1024) {
+                n_1024++;
+              }
+              break;
             }
-            if (b < 10) {
-              n_10++;
-            }
-            if (b < 100) {
-              n_100++;
-            }
-            if (b < 1024) {
-              n_1024++;
-            }
-            break;
           }
         }
+        std::cout << "R@1 = " << n_1 / double(numQueries) << std::endl;
+        std::cout << "R@10 = " << n_10 / double(numQueries) << std::endl;
+        std::cout << "R@100 = " << n_100 / double(numQueries) << std::endl;
+        std::cout << "R@1024 = " << n_1024 / double(numQueries) << std::endl;
+      } else {
+        std::cout << "R@1 = NOT COMPUTED" << std::endl;
+        std::cout << "R@10 = NOT COMPUTED" << std::endl;
+        std::cout << "R@100 = NOT COMPUTED" << std::endl;
+        std::cout << "R@1024 = NOT COMPUTED" << std::endl;
       }
-      std::cout << "R@1 = " << n_1 / double(numQueries) << std::endl;
-      std::cout << "R@10 = " << n_10 / double(numQueries) << std::endl;
-      std::cout << "R@100 = " << n_100 / double(numQueries) << std::endl;
-      std::cout << "R@1024 = " << n_1024 / double(numQueries) << std::endl;
-    } else {
-      std::cout << "R@1 = NOT COMPUTED" << std::endl;
-      std::cout << "R@10 = NOT COMPUTED" << std::endl;
-      std::cout << "R@100 = NOT COMPUTED" << std::endl;
-      std::cout << "R@1024 = NOT COMPUTED" << std::endl;
+    } catch (const std::exception &e) {
+      faiss::gpu::synchronizeAllDevices();
+      std::cout << "K EXCEPTION: " << e.what() << std::endl;
+      if (i == 0 || i == kBegin) {
+        throw;
+      }
+    } catch (...) {
+      faiss::gpu::synchronizeAllDevices();
+      std::cout << "K UNKNOWN EXCEPTION" << std::endl;
+      if (i == 0 || i == kBegin) {
+        throw;
+      }
     }
   }
 }
@@ -144,7 +161,7 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
                 int nprobeEnd, int kBegin, int kEnd, bool usePrecomputed,
                 int ngpus, bool useShards, size_t safeMemMargin,
                 std::string fileNameCoarseQuantizer, std::string fileNameIndex,
-                bool profile, bool allocLogging) {
+                bool profile, bool allocLogging, bool verbose, int nRuns) {
   size_t devFree = 0;
   size_t devTotal = 0;
   constexpr int maxPageSize = 2 * 1024 * 1024; // 2MB
@@ -246,6 +263,7 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
       ivfpq = new faiss::gpu::GpuIndexIVFPQ(&res, d, nlist, numSubQuantizers,
                                             nbitsSubQuantizer, faiss::METRIC_L2,
                                             config);
+      ivfpq->verbose = verbose;
 
       { // train
         bool storeCoarseQuantizer = true;
@@ -387,6 +405,7 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
     options.precomputeCodesOnCpu = config.precomputeCodesOnCpu;
     options.shard = useShards;
     options.shard_type = 1;
+    options.verbose = verbose;
 
     std::cout << "Ininting resource for multiple GPUs" << std::endl;
     initResourcesMultiGpu(ngpus, allocSizePerTypeMapPerGpu, tempMemoryPerGpu,
@@ -410,8 +429,11 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
   std::cout << "Total: " << devTotal << std::endl;
 
   if (profile) {
-    std::vector<int> numQueriesList = {1,      1000,    8192,    10000,
-                                       100000, 1000000, 10000000};
+    indexMultiGpu->verbose = verbose;
+
+    std::vector<int> numQueriesList = {
+        1,      1000,   8192,   10000,   16384,   32768,   65536,   100000,
+        131072, 262144, 524288, 1048576, 2097152, 4194304, 8388608, 16777216};
     std::vector<int> nprobeList = {1,  2,   4,   8,   16,   32,
                                    64, 128, 256, 512, 1024, 2048};
 
@@ -443,35 +465,47 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
       int numQueries = numQueriesList[i];
       std::cout << "numOfQueries: " << numQueries
                 << " ===============" << std::endl;
-      for (int j = nprobeBegin > 0 ? nprobeBegin : 0;
-           j < nprobeEnd && j < nprobeList.size(); j++) {
-        int nprobe = nprobeList[j];
-        std::cout << "nprobe: " << nprobe << "---------" << std::endl;
+      try {
+        for (int j = nprobeBegin > 0 ? nprobeBegin : 0;
+            j < nprobeEnd && j < nprobeList.size(); j++) {
+          int nprobe = nprobeList[j];
+          std::cout << "nprobe: " << nprobe << "---------" << std::endl;
 
-        faiss::ThreadedIndex<faiss::Index> *threadedIndex =
-            dynamic_cast<faiss::ThreadedIndex<faiss::Index> *>(indexMultiGpu);
+          try {
+            faiss::ThreadedIndex<faiss::Index> *threadedIndex =
+                dynamic_cast<faiss::ThreadedIndex<faiss::Index> *>(indexMultiGpu);
 
-        if (threadedIndex) {
-          // multi GPU
-          for (int k = 0; k < threadedIndex->count(); k++) {
-            faiss::gpu::GpuIndexIVFPQ *ivfpq =
-                dynamic_cast<faiss::gpu::GpuIndexIVFPQ *>(threadedIndex->at(k));
-            ivfpq->setNumProbes(nprobe);
-            std::cout << "Gpu: " << k
-                      << ", maxListLength: " << ivfpq->getMaxListLength()
-                      << std::endl;
+            if (threadedIndex) {
+              // multi GPU
+              for (int k = 0; k < threadedIndex->count(); k++) {
+                faiss::gpu::GpuIndexIVFPQ *ivfpq =
+                    dynamic_cast<faiss::gpu::GpuIndexIVFPQ *>(threadedIndex->at(k));
+                ivfpq->setNumProbes(nprobe);
+                std::cout << "Gpu: " << k
+                          << ", maxListLength: " << ivfpq->getMaxListLength()
+                          << std::endl;
+              }
+            } else {
+              // single GPU
+              faiss::gpu::GpuIndexIVFPQ *ivfpq =
+                  dynamic_cast<faiss::gpu::GpuIndexIVFPQ *>(indexMultiGpu);
+              ivfpq->setNumProbes(nprobe);
+              std::cout << "Gpu: 0, maxListLength: " << ivfpq->getMaxListLength()
+                        << std::endl;
+            }
+
+            search(indexMultiGpu, queries, groundTruth, numQueries, kBegin, kEnd,
+                  dRead, nRuns);
+        
+          } catch (...) {
+            std::cout << "NPROBE UNKNOWN EXCEPTION" << std::endl;
+            if (j == 0 || j == nprobeBegin) {
+              throw;
+            }
           }
-        } else {
-          // single GPU
-          faiss::gpu::GpuIndexIVFPQ *ivfpq =
-              dynamic_cast<faiss::gpu::GpuIndexIVFPQ *>(indexMultiGpu);
-          ivfpq->setNumProbes(nprobe);
-          std::cout << "Gpu: 0, maxListLength: " << ivfpq->getMaxListLength()
-                    << std::endl;
         }
-
-        search(indexMultiGpu, queries, groundTruth, numQueries, kBegin, kEnd,
-               dRead);
+      } catch (...) {
+        std::cout << "QUERY UNKNOWN EXCEPTION" << std::endl;
       }
     }
 
@@ -495,7 +529,7 @@ int main(int argc, char **argv) {
   int d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer, queriesOffset,
       numQueriesBegin, numQueriesEnd, kBegin, kEnd, nprobeBegin, nprobeEnd,
       isFloat, usePrecomputed, numThreads, ngpus, useShards, profile,
-      allocLogging;
+      allocLogging, verbose, nRuns;
   size_t numTrainingVecs, numIndexingVecs;
   std::string fileNameTraining, fileNameIndexing, fileNameQueries,
       fileNameGroundTruth, fileNameCoarseQuantizer, fileNameIndex;
@@ -528,6 +562,8 @@ int main(int argc, char **argv) {
   fileNameIndex = argc > 25 ? argv[25] : "";
   profile = argc > 26 ? std::stoi(argv[26]) : 1;
   allocLogging = argc > 27 ? std::stoi(argv[27]) : 0;
+  verbose = argc > 28 ? std::stoi(argv[28]) : 0;
+  nRuns = argc > 29 ? std::stoi(argv[29]) : 5;
 
   omp_set_num_threads(numThreads);
 
@@ -540,7 +576,7 @@ int main(int argc, char **argv) {
                      fileNameGroundTruth, numQueriesBegin, numQueriesEnd,
                      nprobeBegin, nprobeEnd, kBegin, kEnd, usePrecomputed == 1,
                      ngpus, useShards, safeMemMargin, fileNameCoarseQuantizer,
-                     fileNameIndex, profile, allocLogging);
+                     fileNameIndex, profile, allocLogging, verbose, nRuns);
   } else {
     demo_ivfpq<false>(
         d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer,
@@ -548,7 +584,7 @@ int main(int argc, char **argv) {
         fileNameQueries, queriesOffset, fileNameGroundTruth, numQueriesBegin,
         numQueriesEnd, nprobeBegin, nprobeEnd, kBegin, kEnd,
         usePrecomputed == 1, ngpus, useShards, safeMemMargin,
-        fileNameCoarseQuantizer, fileNameIndex, profile, allocLogging);
+        fileNameCoarseQuantizer, fileNameIndex, profile, allocLogging, verbose, nRuns);
   }
   return 0;
 }
