@@ -15,5 +15,5 @@ BIGANN_DIR=/petrobr/parceirosbr/petrobrasiageo/willian.barreiros/git/gab/pqnns-m
 RESULT_DIR=/petrobr/parceirosbr/petrobrasiageo/willian.barreiros/git/alan/faiss_imipq/demo_out
 DEMO_DIR=/petrobr/parceirosbr/petrobrasiageo/willian.barreiros/git/alan/faiss_imipq/build/faiss/gpu/demos
 
-${DEMO_DIR}/demo_imipq_gpu_sift_m 128 126491 8 8 ${BIGANN_DIR}/bigann_learn.bvecs 32381696 ${BIGANN_DIR}/bigann_base.bvecs 250000000 ${BIGANN_DIR}/bigann_base.bvecs 0 "" 12 13 0 12 0 11 0 1 16 2 1 28991029248 ${RESULT_DIR}/coarse/coarse_ivfpq126491_32M.bin ${RESULT_DIR}/index/index_ivfpq126491_32M_250M.bin 0 0 0 0 | tee ${RESULT_DIR}/outs/ivfpq_multi_gpu_test_shard_index.txt
+${DEMO_DIR}/demo_ivfpq_gpu_sift_m 128 126491 8 8 ${BIGANN_DIR}/bigann_learn.bvecs 32381696 ${BIGANN_DIR}/bigann_base.bvecs 250000000 ${BIGANN_DIR}/bigann_base.bvecs 0 "" 12 13 0 12 0 11 0 1 16 2 1 28991029248 ${RESULT_DIR}/coarse/coarse_ivfpq126491_32M.bin ${RESULT_DIR}/index/index_ivfpq126491_32M_250M.bin 0 0 0 0 | tee ${RESULT_DIR}/outs/ivfpq_multi_gpu_test_shard1.txt
 
