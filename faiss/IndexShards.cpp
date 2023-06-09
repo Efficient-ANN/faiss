@@ -11,7 +11,9 @@
 
 #include <cinttypes>
 #include <cstdio>
+#include <ctime>
 #include <functional>
+#include <iostream>
 
 #include <faiss/impl/FaissAssert.h>
 #include <faiss/utils/Heap.h>
@@ -312,6 +314,11 @@ IndexShardsTemplate<IndexT>::search(idx_t n,
 
   this->runOnIndex(fn);
 
+  clock_t tStart, tEnd;
+  double tTotal;
+  
+  tStart = clock();
+
   std::vector<long> translations(nshard, 0);
 
   // Because we just called runOnIndex above, it is safe to access the sub-index
@@ -333,6 +340,10 @@ IndexShardsTemplate<IndexT>::search(idx_t n,
       n, k, nshard, distances, labels,
       all_distances, all_labels, translations);
   }
+
+  tEnd = clock();
+  tTotal += (double)(tEnd - tStart) / CLOCKS_PER_SEC;
+  std::cout << "Total time on CPU" << tTotal << std::endl;
 }
 
 // explicit instanciations
