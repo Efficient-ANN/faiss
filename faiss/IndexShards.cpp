@@ -343,7 +343,7 @@ IndexShardsTemplate<IndexT>::search(idx_t n,
 
   tEnd = clock();
   tTotal += (double)(tEnd - tStart) / CLOCKS_PER_SEC;
-  std::cout << "Total time on CPU" << tTotal << std::endl;
+  std::cout << "Total time on CPU: " << tTotal << std::endl;
 }
 
 // explicit instanciations

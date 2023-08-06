@@ -52,6 +52,8 @@ void search(faiss::Index *index, float *queries, int *groundTruth,
         index->search(numQueries, queries, k, outDistances.data(),
                       outLabels.data());
 
+        std::cout << "Time before sync: " << (double)(tEnd - tStart) / CLOCKS_PER_SEC << std::endl;
+
         faiss::gpu::synchronizeAllDevices();
 
         tEnd = clock();
@@ -482,7 +484,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
                         threadedIndex->at(k));
                 imipqGpu->setNumProbes(nprobe);
                 imipqGpu->verbose = verbose;
-                std::cout << "Gpu: " << k
+                std::cout << "Gpu: " << imipqGpu->getDevice()
                           << ", maxListLength: " << imipqGpu->getMaxListLength()
                           << ", nlist: " << imipqGpu->nlist
                           << ", ntotal: " << imipqGpu->ntotal
@@ -494,7 +496,8 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
                   dynamic_cast<faiss::gpu::GpuIndexIMIPQv2 *>(indexMultiGpu);
               imipqGpu->setNumProbes(nprobe);
               imipqGpu->verbose = verbose;
-              std::cout << "Gpu: 0, maxListLength: " << imipqGpu->getMaxListLength()
+              std::cout << "Gpu: " << imipqGpu->getDevice()
+                        << ", maxListLength: " << imipqGpu->getMaxListLength()
                         << ", nlist: " << imipqGpu->nlist
                         << ", ntotal: " << imipqGpu->ntotal
                         << std::endl;
