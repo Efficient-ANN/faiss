@@ -18,6 +18,7 @@
 #include <faiss/gpu/StandardGpuResources.h>
 #include <faiss/gpu/utils/DeviceUtils.h>
 #include <faiss/gpu/utils/StaticUtils.h>
+#include <faiss/gpu/utils/Timer.h>
 #include <faiss/impl/ThreadedIndex.h>
 #include <faiss/index_io.h>
 #include <faiss/utils/vecs_storage.h>
@@ -47,17 +48,21 @@ void search(faiss::Index *index, float *queries, int *groundTruth,
 
       tGpu = 0;
       for (int j = 0; j < nRuns; j++) {
+        CpuTimer timer;
+
         tStart = clock();
 
         index->search(numQueries, queries, k, outDistances.data(),
                       outLabels.data());
 
+        tEnd = clock();
         std::cout << "Time before sync: " << (double)(tEnd - tStart) / CLOCKS_PER_SEC << std::endl;
 
         faiss::gpu::synchronizeAllDevices();
 
         tEnd = clock();
         tGpu += (double)(tEnd - tStart) / CLOCKS_PER_SEC;
+        std::cout << "Timer after sync (millis)" << timer.elapsedMilliseconds() << std::endl;
       }
 
       std::cout << "IMIPQ search time on GPU: " << tGpu / nRuns << std::endl;
