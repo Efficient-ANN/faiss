@@ -604,7 +604,7 @@ void GpuIndexIMI::searchFromCpuPaged_(int n, const float *x, int k,
 
       // Create completion event
       eventGpuExecuteDone[cur3BufIndex].reset(new CudaEvent(defaultStream));
-      cudaEvents.push_back(new CudaEvent(defaultStream, true));
+      cudaEvents.push_back(std::unique_ptr<CudaEvent>(new CudaEvent(defaultStream, true)));
 
       // We pick up from here
       cur3BufIndex = (cur3BufIndex == 0) ? 1 : 0;
