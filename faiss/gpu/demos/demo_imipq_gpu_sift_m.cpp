@@ -142,12 +142,15 @@ void initResourcesMultiGpu(
         &allocSizePerTypeMapPerGpu,
     size_t tempMemory,
     std::vector<faiss::gpu::GpuResourcesProvider *> &resVector,
-    std::vector<int> &devs, bool allocLogging) {
+    std::vector<int> &devs, bool allocLogging, bool enablePinnedMemory) {
   for (int i = 0; i < ngpus; i++) {
     faiss::gpu::StandardGpuResources *res;
     res = new faiss::gpu::StandardGpuResources(allocSizePerTypeMapPerGpu);
     res->setLogMemoryAllocations(allocLogging);
     res->setTempMemory(tempMemory);
+    if (!enablePinnedMemory) {
+      res->setPinnedMemory(0);
+    }
     resVector.push_back(res);
     devs.push_back(i);
   }
@@ -162,7 +165,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
                 int numQueriesBegin, int numQueriesEnd, int nprobeBegin,
                 int nprobeEnd, int kBegin, int kEnd, int ngpus, bool useShards,
                 size_t safeMemMargin, std::string fileNameCoarseQuantizer,
-                std::string fileNameIndex, bool profile, bool allocLogging, bool verbose, int nRuns) {
+                std::string fileNameIndex, bool profile, bool allocLogging, bool verbose, int nRuns, bool enablePinnedMemory) {
   size_t devFree = 0;
   size_t devTotal = 0;
   constexpr int maxPageSize = 2 * 1024 * 1024; // 2MB
@@ -412,7 +415,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
 
     std::cout << "Ininting resource for multiple GPUs" << std::endl;
     initResourcesMultiGpu(ngpus, allocSizePerTypeMapPerGpu, tempMemoryPerGpu,
-                          resVector, devs, allocLogging);
+                          resVector, devs, allocLogging, enablePinnedMemory);
 
     std::cout << "Moving index from cpu to multiple GPUs: " << std::endl;
     tStart = clock();
@@ -542,7 +545,7 @@ int main(int argc, char **argv) {
 
   int d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer, queriesOffset,
       numQueriesBegin, numQueriesEnd, kBegin, kEnd, nprobeBegin, nprobeEnd,
-      isFloat, numThreads, ngpus, useShards, profile, allocLogging, verbose, nRuns;
+      isFloat, numThreads, ngpus, useShards, profile, allocLogging, verbose, nRuns, enablePinnedMemory;
   size_t numTrainingVecs, numIndexingVecs;
   std::string fileNameTraining, fileNameIndexing, fileNameQueries,
       fileNameGroundTruth, fileNameCoarseQuantizer, fileNameIndex;
@@ -576,6 +579,7 @@ int main(int argc, char **argv) {
   allocLogging = argc > 26 ? std::stoi(argv[26]) : 0;
   verbose = argc > 27 ? std::stoi(argv[27]) : 0;
   nRuns = argc > 28 ? std::stoi(argv[28]) : 5;
+  enablePinnedMemory = argc > 29 ? std::stoi(argv[29]) : 1;
 
   omp_set_num_threads(numThreads);
 
@@ -588,7 +592,7 @@ int main(int argc, char **argv) {
                      fileNameGroundTruth, numQueriesBegin, numQueriesEnd,
                      nprobeBegin, nprobeEnd, kBegin, kEnd, ngpus, useShards,
                      safeMemMargin, fileNameCoarseQuantizer, fileNameIndex,
-                     profile, allocLogging, verbose, nRuns);
+                     profile, allocLogging, verbose, nRuns, enablePinnedMemory);
   } else {
     demo_imipq<false>(d, coarseCodebookSize, numSubQuantizers,
                       nbitsSubQuantizer, fileNameTraining, numTrainingVecs,
@@ -596,7 +600,7 @@ int main(int argc, char **argv) {
                       queriesOffset, fileNameGroundTruth, numQueriesBegin,
                       numQueriesEnd, nprobeBegin, nprobeEnd, kBegin, kEnd,
                       ngpus, useShards, safeMemMargin, fileNameCoarseQuantizer,
-                      fileNameIndex, profile, allocLogging, verbose, nRuns);
+                      fileNameIndex, profile, allocLogging, verbose, nRuns, enablePinnedMemory);
   }
   return 0;
 }
