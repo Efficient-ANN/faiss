@@ -386,11 +386,8 @@ void GpuIndexIMI::searchNonPaged_(int n, const float *x, int k,
 
   auto stream = resources_->getDefaultStream(imiConfig_.device);
 
-  unsigned long long defaultStreamId;
-  cudaStreamGetId(stream, &defaultStreamId);
-
   std::cout << "GPU: " << this->getDevice() << " imiConfig_.device: " << imiConfig_.device << std::endl;
-  std::cout << "GPU: " << this->getDevice() << " defaultStreamId: " << defaultStreamId << std::endl;
+  std::cout << "GPU: " << this->getDevice() << " defaultStream Id: " << getStreamId(stream) << std::endl;
 
   tStart = clock();
 
@@ -499,13 +496,8 @@ void GpuIndexIMI::searchFromCpuPaged_(int n, const float *x, int k,
   auto defaultStream = resources_->getDefaultStream(imiConfig_.device);
   auto copyStream = resources_->getAsyncCopyStream(imiConfig_.device);
 
-  unsigned long long streamId;
-
-  cudaStreamGetId(defaultStream, &streamId);
-  std::cout << "GPU: " << this->getDevice() << " defaultStream: " << streamId << std::endl;
-  cudaStreamGetId(defaultStream, &copyStream);
-  std::cout << "GPU: " << this->getDevice() << " copyStream: " << streamId << std::endl;
-
+  std::cout << "GPU: " << this->getDevice() << " defaultStream id : " << getStreamId(defaultStream) << std::endl;
+  std::cout << "GPU: " << this->getDevice() << " copyStream id: " << getStreamId(copyStream) << std::endl;
 
   FAISS_ASSERT((size_t)pageSizeInVecs * this->d <=
                (size_t)std::numeric_limits<int>::max());
@@ -575,7 +567,7 @@ void GpuIndexIMI::searchFromCpuPaged_(int n, const float *x, int k,
 
       // Mark a completion event in this stream
       eventPinnedCopyDone[cur2BufIndex].reset(new CudaEvent(copyStream));
-      cudaEvents.push_back(new CudaEvent(copyStream, true));
+      cudaEvents.push_back(std::unique_ptr<CudaEvent>(new CudaEvent(copyStream, true)));
 
       // We pick up from here
       cur3 = cur2;

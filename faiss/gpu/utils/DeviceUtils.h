@@ -24,6 +24,9 @@ void setCurrentDevice(int device);
 /// Returns the number of available GPU devices
 int getNumDevices();
 
+/// Returns the number of available GPU devices
+unsigned long long getStreamId(cudaStream_t stream);
+
 /// Starts the CUDA profiler (exposed via SWIG)
 void profilerStart();
 
