@@ -40,12 +40,6 @@ int getNumDevices() {
   return numDev;
 }
 
-unsigned long long getStreamId(cudaStream_t stream) {
-  unsigned long long defaultStreamId;
-  CUDA_VERIFY(cudaStreamGetId(stream, &defaultStreamId));
-  return defaultStreamId;
-}
-
 void profilerStart() {
   CUDA_VERIFY(cudaProfilerStart());
 }

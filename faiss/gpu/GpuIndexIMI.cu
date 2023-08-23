@@ -387,7 +387,7 @@ void GpuIndexIMI::searchNonPaged_(int n, const float *x, int k,
   auto stream = resources_->getDefaultStream(imiConfig_.device);
 
   std::cout << "GPU: " << this->getDevice() << " imiConfig_.device: " << imiConfig_.device << std::endl;
-  std::cout << "GPU: " << this->getDevice() << " defaultStream Id: " << getStreamId(stream) << std::endl;
+  // std::cout << "GPU: " << this->getDevice() << " defaultStream Id: " << getStreamId(stream) << std::endl;
 
   tStart = clock();
 
@@ -496,8 +496,8 @@ void GpuIndexIMI::searchFromCpuPaged_(int n, const float *x, int k,
   auto defaultStream = resources_->getDefaultStream(imiConfig_.device);
   auto copyStream = resources_->getAsyncCopyStream(imiConfig_.device);
 
-  std::cout << "GPU: " << this->getDevice() << " defaultStream id : " << getStreamId(defaultStream) << std::endl;
-  std::cout << "GPU: " << this->getDevice() << " copyStream id: " << getStreamId(copyStream) << std::endl;
+  // std::cout << "GPU: " << this->getDevice() << " defaultStream id : " << getStreamId(defaultStream) << std::endl;
+  // std::cout << "GPU: " << this->getDevice() << " copyStream id: " << getStreamId(copyStream) << std::endl;
 
   FAISS_ASSERT((size_t)pageSizeInVecs * this->d <=
                (size_t)std::numeric_limits<int>::max());
