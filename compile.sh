@@ -5,8 +5,8 @@ cd build
 cmake --build .
 
 cd faiss/gpu/demos
-make demo_imipq_gpu_sift_m
+make demo_imipq_gpu_sift_m -j8
 
 cd ../../../
-make
+make -j8
 
