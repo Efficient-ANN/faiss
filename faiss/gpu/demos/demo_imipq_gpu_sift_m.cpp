@@ -48,7 +48,7 @@ void search(faiss::Index *index, float *queries, int *groundTruth,
 
       tGpu = 0;
       for (int j = 0; j < nRuns; j++) {
-        CpuTimer timer;
+        faiss::gpu::CpuTimer timer;
 
         tStart = clock();
 
