@@ -29,6 +29,7 @@
 #include <limits>
 #include <thrust/host_vector.h>
 #include <unordered_map>
+#include <ctime>
 
 namespace faiss {
 namespace gpu {
@@ -496,6 +497,11 @@ void IMIPQv2::query(Tensor<float, 2, true> &queries, int nprobe, int k,
                     Tensor<long, 2, true> &outIndices) {
   FAISS_ASSERT(k <= GPU_MAX_SELECTION_K);
 
+  clock_t tStart, tEnd;
+  tStart = clock();
+  std::cout << "GPU: " << getCurrentDevice() << " IMIPQv2::query() start: " << (double)(tStart - 0) / CLOCKS_PER_SEC << std::endl;
+  
+
   auto stream = resources_->getDefaultStreamCurrentDevice();
   nprobe = std::min(nprobe, quantizer_->getSize());
 
@@ -515,9 +521,16 @@ void IMIPQv2::query(Tensor<float, 2, true> &queries, int nprobe, int k,
       resources_, makeTempAlloc(AllocType::CoarseIndicesOutput, stream),
       {numQueries, nprobe});
 
+  tStart = clock();
+  std::cout << "GPU: " << getCurrentDevice() << " IMIPQv2::query() call coarse quantizer query: " << (double)(tStart - 0) / CLOCKS_PER_SEC << std::endl;
+
   // Find the `nprobe` closest coarse centroids; we can use int
   // indices both internally and externally
   quantizer_->query(queries, nprobe, coarseDistances, coarseIndices, true);
+
+  tEnd = clock();
+  std::cout << "GPU: " << getCurrentDevice() << " IMIPQv2::query() return coarse quantizer query: " << ((double)(tEnd - tStart) / CLOCKS_PER_SEC) 
+    << ", " << (double)(tEnd - 0) / CLOCKS_PER_SEC << std::endl;
 
   if (precomputedCodes_) {
     runPQPrecomputedCodes_(queries, coarseDistances, coarseIndices, k,
@@ -583,6 +596,9 @@ Tensor<float, 3, true> IMIPQv2::getPrecomputedCodesVecFloat32() {
 void IMIPQv2::runCalcTerm3(Tensor<float, 2, true> &queries, int &numQueries,
                            int &numSubQuantizersPerCodebook,
                            Tensor<float, 3, true> &term3) {
+  clock_t tStart, tEnd;
+  tStart = clock();
+  std::cout << "GPU: " << getCurrentDevice() << " IMIPQv2::runCalcTerm3 start: " << (double)(tStart - 0) / CLOCKS_PER_SEC << std::endl;
   auto stream = resources_->getDefaultStreamCurrentDevice();
 
   auto querySubQuantizerView = queries.view<3>(
@@ -608,6 +624,9 @@ void IMIPQv2::runCalcTerm3(Tensor<float, 2, true> &queries, int &numQueries,
                                stream);
 
   runTransposeAny(term3Transposed, 0, 1, term3, stream);
+  tEnd = clock();
+    std::cout << "GPU: " << getCurrentDevice() << " IMIPQv2::runCalcTerm3 end: " << ((double)(tEnd - tStart) / CLOCKS_PER_SEC) 
+      << ", " << (double)(tEnd - 0) / CLOCKS_PER_SEC << std::endl;
 }
 
 void IMIPQv2::runCalcTerm3(Tensor<float, 2, true> &queries,
@@ -625,6 +644,10 @@ void IMIPQv2::runPQPrecomputedCodes_(
     DeviceTensor<ushort2, 2, true> &coarseIndices, int k,
     Tensor<float, 2, true> &outDistances, Tensor<long, 2, true> &outIndices) {
   FAISS_ASSERT(precomputedCode_.numElements() > 0);
+
+  clock_t tStart, tEnd;
+  tStart = clock();
+  std::cout << "GPU: " << getCurrentDevice() << " IMIPQv2::runPQPrecomputedCodes_ start: " << (double)(tStart - 0) / CLOCKS_PER_SEC << std::endl;
 
   auto stream = resources_->getDefaultStreamCurrentDevice();
 
@@ -672,6 +695,9 @@ void IMIPQv2::runPQPrecomputedCodes_(
       deviceListOffsets_.data(), {(int)deviceListOffsets_.size()});
   DeviceTensor<uint8_t, 1, true, long> deviceListDataTensor(
       deviceListData_.data(), {(long)deviceListData_.size()});
+  
+  tEnd = clock();
+  std::cout << "GPU: " << getCurrentDevice() << " IMIPQv2::runPQPrecomputedCodes_ call runPQScanMultiPassPrecomputed: " << (double)(tEnd - 0) / CLOCKS_PER_SEC << std::endl;
 
   if (indicesOptions_ == INDICES_64_BIT) {
     DeviceTensor<Index::idx_t, 1, true> deviceListIndexTensor(
@@ -702,6 +728,9 @@ void IMIPQv2::runPQPrecomputedCodes_(
         numSubQuantizers_, deviceListIndexTensor, indicesOptions_,
         maxListLength_, k, outDistances, outIndices, resources_);
   }
+  tEnd = clock();
+    std::cout << "GPU: " << getCurrentDevice() << " IMIPQv2::runPQPrecomputedCodes_ end: " << ((double)(tEnd - tStart) / CLOCKS_PER_SEC) 
+      << ", " << (double)(tEnd - 0) / CLOCKS_PER_SEC << std::endl;
 }
 
 template <typename CentroidT>

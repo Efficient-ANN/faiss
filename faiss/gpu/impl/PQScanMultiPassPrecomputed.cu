@@ -21,6 +21,8 @@
 #include <faiss/gpu/utils/StaticUtils.h>
 #include <faiss/gpu/utils/WarpPackedBits.cuh>
 #include <limits>
+#include <iostream>
+#include <ctime>
 
 namespace faiss { namespace gpu {
 
@@ -2042,6 +2044,10 @@ void runPQScanMultiPassPrecomputed(// (query id)(probe id)
 
   int curStream = 0;
 
+  clock_t tStart, tEnd;
+  tStart = clock();
+  std::cout << "GPU: " << getCurrentDevice() << " runPQScanMultiPassPrecomputed for start: " << (double)(tStart - 0) / CLOCKS_PER_SEC << std::endl;
+
   for (int query = 0; query < topQueryToCentroid.getSize(0); query += queryTileSize) {
     int numQueriesInTile =
       std::min(queryTileSize, topQueryToCentroid.getSize(0) - query);
@@ -2095,7 +2101,15 @@ void runPQScanMultiPassPrecomputed(// (query id)(probe id)
     curStream = (curStream + 1) % 2;
   }
 
+  tEnd = clock();
+    std::cout << "GPU: " << getCurrentDevice() << " runPQScanMultiPassPrecomputed for end: " << ((double)(tEnd - tStart) / CLOCKS_PER_SEC) 
+      << ", " << (double)(tEnd - 0) / CLOCKS_PER_SEC << std::endl;
+
   streamWait({stream}, streams);
+  
+  tEnd = clock();
+    std::cout << "GPU: " << getCurrentDevice() << " runPQScanMultiPassPrecomputed streamWait end: " << ((double)(tEnd - tStart) / CLOCKS_PER_SEC) 
+      << ", " << (double)(tEnd - 0) / CLOCKS_PER_SEC << std::endl;
 }
 
 void runPQScanMultiPassPrecomputed( // (query id)(probe id)

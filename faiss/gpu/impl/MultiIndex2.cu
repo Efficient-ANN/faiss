@@ -18,6 +18,7 @@
 #include <faiss/gpu/utils/Transpose.cuh>
 #include <iostream>
 #include <vector>
+#include <ctime>
 
 namespace faiss {
 namespace gpu {
@@ -245,6 +246,10 @@ void MultiIndex2::queryImpl(Tensor<float, 2, true> &subQueries, int k,
       resources_, makeTempAlloc(AllocType::MultiSequenceInput, stream),
       {numCodebooks_, numQueriesTilePerCodebook, subK});
 
+  clock_t tStart, tEnd;
+  tStart = clock();
+  std::cout << "GPU: " << getCurrentDevice() << " MultiIndex2::queryImpl runL2Distance start: " << (double)(tStart - 0) / CLOCKS_PER_SEC << std::endl;
+
   auto allStreams = resources_->getAlternateStreamsCurrentDevice();
   // 2 streams for the first codebook and 2 streams for the second codebook
   std::vector<cudaStream_t> streams = {allStreams[0], allStreams[1],
@@ -275,15 +280,24 @@ void MultiIndex2::queryImpl(Tensor<float, 2, true> &subQueries, int k,
                     {streams[0], streams[1]}, !exactDistance);
     }
 
+    tEnd = clock();
+    std::cout << "GPU: " << getCurrentDevice() << " MultiIndex2::queryImpl runL2Distance end: " << ((double)(tEnd - tStart) / CLOCKS_PER_SEC) 
+      << ", " << (double)(tEnd - 0) / CLOCKS_PER_SEC << std::endl;
+
     auto outDistancesView =
         outDistances.narrowOutermost(currentTile, currentTileSize);
     auto outIndicesView =
         outIndices.narrowOutermost(currentTile, currentTileSize);
 
+    tStart = clock();
+    std::cout << "GPU: " << getCurrentDevice() << " MultiIndex2::queryImpl runMultiSequence2 start: " << (double)(tStart - 0) / CLOCKS_PER_SEC << std::endl;
     // use the first stream from current tile to compute multi-sequence
     runMultiSequence2(currentTileSize, subK, k, outSubDistances, outSubIndices,
                       outDistancesView, numCentroidsPerCodebook_,
                       outIndicesView, resources_);
+    tEnd = clock();
+    std::cout << "GPU: " << getCurrentDevice() << " MultiIndex2::queryImpl runMultiSequence2 end: " << ((double)(tEnd - tStart) / CLOCKS_PER_SEC) 
+      << ", " << (double)(tEnd - 0) / CLOCKS_PER_SEC << std::endl;
   }
 }
 

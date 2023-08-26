@@ -15,6 +15,8 @@
 #include <faiss/gpu/utils/StaticUtils.h>
 #include <faiss/utils/utils.h>
 #include <string>
+#include <iostream>
+#include <ctime>
 
 namespace faiss {
 namespace gpu {
@@ -420,8 +422,13 @@ void GpuIndexIMIPQv2::searchImpl_(int n, const float *x, int k,
   Tensor<float, 2, true> outDistances(distances, {n, k});
   Tensor<Index::idx_t, 2, true> outLabels(const_cast<Index::idx_t *>(labels),
                                           {n, k});
-
+  clock_t tStart, tEnd;
+  tStart = clock();
+  std::cout << "GPU: " << this->getDevice() << " searchImpl_() start: " << (double)(tStart - 0) / CLOCKS_PER_SEC << std::endl;
   index_->query(queries, nprobe, k, outDistances, outLabels);
+  tEnd = clock();
+  std::cout << "GPU: " << this->getDevice() << ", searchImpl_() end time:" << ((double)(tEnd - tStart) / CLOCKS_PER_SEC) 
+    << ", " << (double)(tEnd - 0) / CLOCKS_PER_SEC << std::endl;
 }
 
 int GpuIndexIMIPQv2::getListLength(int listId) const {
