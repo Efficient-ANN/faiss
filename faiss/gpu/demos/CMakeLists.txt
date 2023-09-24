@@ -44,3 +44,6 @@ target_link_libraries(demo_knn PRIVATE faiss CUDA::cudart)
 
 add_executable(demo_vector_residual EXCLUDE_FROM_ALL demo_vector_residual.cu)
 target_link_libraries(demo_vector_residual PRIVATE faiss CUDA::cudart)
+
+add_executable(demo_memory EXCLUDE_FROM_ALL demo_memory.cu)
+target_link_libraries(demo_memory PRIVATE CUDA::cudart)
