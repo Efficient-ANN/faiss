@@ -21,6 +21,9 @@ target_link_libraries(demo_imipq_gpu_sift PRIVATE faiss CUDA::cudart)
 add_executable(demo_imipq_gpu_sift_m EXCLUDE_FROM_ALL demo_imipq_gpu_sift_m.cpp)
 target_link_libraries(demo_imipq_gpu_sift_m PRIVATE faiss CUDA::cudart)
 
+add_executable(demo_imipq_gpu_sift_m_v2 EXCLUDE_FROM_ALL demo_imipq_gpu_sift_m.cpp)
+target_link_libraries(demo_imipq_gpu_sift_m_v2 PRIVATE CUDA::cudart faiss CUDA::cudart)
+
 add_executable(demo_ivfpq_gpu_sift EXCLUDE_FROM_ALL demo_ivfpq_gpu_sift.cpp)
 target_link_libraries(demo_ivfpq_gpu_sift PRIVATE faiss CUDA::cudart)
 
@@ -47,3 +50,6 @@ target_link_libraries(demo_vector_residual PRIVATE faiss CUDA::cudart)
 
 add_executable(demo_memory EXCLUDE_FROM_ALL demo_memory.cu)
 target_link_libraries(demo_memory PRIVATE CUDA::cudart)
+
+add_executable(demo_memory_v2 EXCLUDE_FROM_ALL demo_memory.cu)
+target_link_libraries(demo_memory_v2 PRIVATE faiss CUDA::cudart)
