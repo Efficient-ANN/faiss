@@ -19,8 +19,8 @@ ls $CUDA_HOME
 
 nvprof --version
 
-BIGANN_DIR=/petrobr/parceirosbr/petrobrasiageo/willian.barreiros/git/gab/pqnns-multi-stream/data/sift1bi
-RESULT_DIR=/petrobr/parceirosbr/petrobrasiageo/willian.barreiros/git/alan/faiss_imipq/demo_out
-DEMO_DIR=/petrobr/parceirosbr/petrobrasiageo/willian.barreiros/git/alan/faiss_imipq/build/faiss/gpu/demos
+BIGANN_DIR=/petrobr/parceirosbr/petrobrasiageo/willian.barreiros/git/g/pqnns-multi-stream/data/sift1bi
+RESULT_DIR=/petrobr/parceirosbr/petrobrasiageo/willian.barreiros/git/a/faiss_imipq/demo_out
+DEMO_DIR=/petrobr/parceirosbr/petrobrasiageo/willian.barreiros/git/a/faiss_imipq/build/faiss/gpu/demos
 
 nvprof --print-gpu-trace ${DEMO_DIR}/demo_imipq_gpu_sift_m_v2 128 15560 8 8 ${BIGANN_DIR}/bigann_learn.bvecs 32381696 ${BIGANN_DIR}/bigann_base.bvecs 500000000 ${BIGANN_DIR}/bigann_base.bvecs 0 "" 9 14 6 7 6 8 0 48 2 1 28991029248 ${RESULT_DIR}/coarse/coarse_imipq15560_32M_m_replica.bin ${RESULT_DIR}/index/index_imipq15560_32M_m_replica_500M.bin 1 0 0 1 1 | tee ${RESULT_DIR}/outs/1_gpus_imipq1000M_15560_32M_m_shard_27GB_2_gpu_500M_debugPrints_prof.txt
