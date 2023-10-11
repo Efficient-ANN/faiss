@@ -1,5 +1,6 @@
 #include <cuda_runtime.h>
 #include <cublas_v2.h>
+#include <iostream>
 
 int main(int argc, char const *argv[]) {
     size_t devFree = 0;

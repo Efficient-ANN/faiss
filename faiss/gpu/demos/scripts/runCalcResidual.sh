@@ -19,8 +19,8 @@ ls $CUDA_HOME
 
 nvprof --version
 
-BIGANN_DIR=/petrobr/parceirosbr/petrobrasiageo/willian.barreiros/git/gab/pqnns-multi-stream/data/sift1bi
-RESULT_DIR=/petrobr/parceirosbr/petrobrasiageo/willian.barreiros/git/alan/faiss_imipq/demo_out
-DEMO_DIR=/petrobr/parceirosbr/petrobrasiageo/willian.barreiros/git/alan/faiss_imipq/build/faiss/gpu/demos
+BIGANN_DIR=/petrobr/parceirosbr/petrobrasiageo/willian.barreiros/git/g/pqnns-multi-stream/data/sift1bi
+RESULT_DIR=/petrobr/parceirosbr/petrobrasiageo/willian.barreiros/git/a/faiss_imipq/demo_out
+DEMO_DIR=/petrobr/parceirosbr/petrobrasiageo/willian.barreiros/git/a/faiss_imipq/build/faiss/gpu/demos
 
 nvprof --print-gpu-trace ${DEMO_DIR}/demo_vector_residual
