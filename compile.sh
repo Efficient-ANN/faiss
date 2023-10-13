@@ -1,4 +1,4 @@
-module load boost/1.73_gnu cmake/3.17.3 gcc/10.2 cuda/11.4 gcc/7.4
+module load boost/1.73_gnu cmake/3.17.3 gcc/10.2 cuda/11.0 gcc/7.4
 module load /scratch/app/modulos/sequana/current openmpi/gnu/4.0.1_sequana
 
 set -x
