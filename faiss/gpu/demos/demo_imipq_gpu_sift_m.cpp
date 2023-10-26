@@ -142,13 +142,13 @@ void initResourcesMultiGpu(
         &allocSizePerTypeMapPerGpu,
     size_t tempMemory,
     std::vector<faiss::gpu::GpuResourcesProvider *> &resVector,
-    std::vector<int> &devs, bool allocLogging, bool enablePinnedMemory) {
+    std::vector<int> &devs, bool allocLogging, int pinnedMemoryMode) {
   for (int i = 0; i < ngpus; i++) {
     faiss::gpu::StandardGpuResources *res;
     res = new faiss::gpu::StandardGpuResources(allocSizePerTypeMapPerGpu);
     res->setLogMemoryAllocations(allocLogging);
     res->setTempMemory(tempMemory);
-    if (!enablePinnedMemory) {
+    if (pinnedMemoryMode == 0) {
       res->setPinnedMemory(0);
     }
     resVector.push_back(res);
@@ -165,7 +165,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
                 int numQueriesBegin, int numQueriesEnd, int nprobeBegin,
                 int nprobeEnd, int kBegin, int kEnd, int ngpus, bool useShards,
                 size_t safeMemMargin, std::string fileNameCoarseQuantizer,
-                std::string fileNameIndex, bool profile, bool allocLogging, bool verbose, int nRuns, bool enablePinnedMemory) {
+                std::string fileNameIndex, bool profile, bool allocLogging, bool verbose, int nRuns, int pinnedMemoryMode) {
   size_t devFree = 0;
   size_t devTotal = 0;
   constexpr int roundSize = 256;
@@ -242,6 +242,11 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
   // config.multiIndexConfig.memorySpace = faiss::gpu::MemorySpace::Fixed;
   config.indicesOptions = indiceOptions;
   config.usePrecomputedTables = true;
+
+  if (pinnedMemoryMode == 2) {
+    config.forcePinnedMemory = true;
+  }
+
 
   faiss::Index *indexCpu = nullptr;
 
@@ -415,7 +420,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
 
     std::cout << "Ininting resource for multiple GPUs" << std::endl;
     initResourcesMultiGpu(ngpus, allocSizePerTypeMapPerGpu, tempMemoryPerGpu,
-                          resVector, devs, allocLogging, enablePinnedMemory);
+                          resVector, devs, allocLogging, pinnedMemoryMode);
 
     std::cout << "Moving index from cpu to multiple GPUs: " << std::endl;
     tStart = clock();
@@ -545,7 +550,7 @@ int main(int argc, char **argv) {
 
   int d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer, queriesOffset,
       numQueriesBegin, numQueriesEnd, kBegin, kEnd, nprobeBegin, nprobeEnd,
-      isFloat, numThreads, ngpus, useShards, profile, allocLogging, verbose, nRuns, enablePinnedMemory;
+      isFloat, numThreads, ngpus, useShards, profile, allocLogging, verbose, nRuns, pinnedMemoryMode;
   size_t numTrainingVecs, numIndexingVecs;
   std::string fileNameTraining, fileNameIndexing, fileNameQueries,
       fileNameGroundTruth, fileNameCoarseQuantizer, fileNameIndex;
@@ -579,7 +584,7 @@ int main(int argc, char **argv) {
   allocLogging = argc > 26 ? std::stoi(argv[26]) : 0;
   verbose = argc > 27 ? std::stoi(argv[27]) : 0;
   nRuns = argc > 28 ? std::stoi(argv[28]) : 5;
-  enablePinnedMemory = argc > 29 ? std::stoi(argv[29]) : 1;
+  pinnedMemoryMode = argc > 29 ? std::stoi(argv[29]) : 1;
 
   omp_set_num_threads(numThreads);
 
@@ -592,7 +597,7 @@ int main(int argc, char **argv) {
                      fileNameGroundTruth, numQueriesBegin, numQueriesEnd,
                      nprobeBegin, nprobeEnd, kBegin, kEnd, ngpus, useShards,
                      safeMemMargin, fileNameCoarseQuantizer, fileNameIndex,
-                     profile, allocLogging, verbose, nRuns, enablePinnedMemory);
+                     profile, allocLogging, verbose, nRuns, pinnedMemoryMode);
   } else {
     demo_imipq<false>(d, coarseCodebookSize, numSubQuantizers,
                       nbitsSubQuantizer, fileNameTraining, numTrainingVecs,
@@ -600,7 +605,7 @@ int main(int argc, char **argv) {
                       queriesOffset, fileNameGroundTruth, numQueriesBegin,
                       numQueriesEnd, nprobeBegin, nprobeEnd, kBegin, kEnd,
                       ngpus, useShards, safeMemMargin, fileNameCoarseQuantizer,
-                      fileNameIndex, profile, allocLogging, verbose, nRuns, enablePinnedMemory);
+                      fileNameIndex, profile, allocLogging, verbose, nRuns, pinnedMemoryMode);
   }
   return 0;
 }
