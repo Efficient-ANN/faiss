@@ -19,10 +19,12 @@ namespace faiss {
 namespace gpu {
 
 struct GpuIndexIMIConfig : public GpuIndexConfig {
-  inline GpuIndexIMIConfig() : indicesOptions(INDICES_64_BIT) {}
+  inline GpuIndexIMIConfig() : indicesOptions(INDICES_64_BIT), forcePinnedMemory(false) {}
 
   /// Index storage options for the GPU
   IndicesOptions indicesOptions;
+  
+  bool forcePinnedMemory;
 
   /// Configuration for the coarse quantizer object
   GpuMultiIndex2Config multiIndexConfig;

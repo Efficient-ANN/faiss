@@ -325,6 +325,8 @@ void GpuIndexIMI::search(Index::idx_t n, const float *x, Index::idx_t k,
   DeviceScope scope(imiConfig_.device);
   auto stream = resources_->getDefaultStream(imiConfig_.device);
 
+  std::cout << "GPU DEVICE: " << imiConfig_.device << ", " << getCurrentDevice() << std::endl;
+
   // We guarantee that the searchImpl_ will be called with device-resident
   // pointers.
 
@@ -351,7 +353,7 @@ void GpuIndexIMI::search(Index::idx_t n, const float *x, Index::idx_t k,
     // fit on the GPU (e.g., n * k is too large for the GPU memory).
     size_t dataSize = (size_t)n * this->d * sizeof(float);
 
-    if (dataSize >= minPagedSize_) {
+    if (dataSize >= minPagedSize_ || imiConfig_.forcePinnedMemory) {
       std::cout << "GPU: " << this->getDevice() << ", search() call searchFromCpuPaged_()" << std::endl;
       searchFromCpuPaged_(n, x, k, outDistances.data(), outLabels.data());
       usePaged = true;
