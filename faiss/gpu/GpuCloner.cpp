@@ -213,6 +213,7 @@ Index *ToGpuCloner::clone_Index(const Index *index)
             config.useFloat16LookupTables = useFloat16;
             config.usePrecomputedTables = usePrecomputed;
             config.precomputeCodesOnCpu = precomputeCodesOnCpu;
+            config.forcePinnedMemory = forcePinnedMemory;
             config.multiIndexConfig.device = device;
             config.multiIndexConfig.memorySpace = coarseQuantizerMemorySpace;
 
