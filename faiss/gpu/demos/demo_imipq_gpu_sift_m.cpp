@@ -414,6 +414,7 @@ void demo_imipq(int d, int coarseCodebookSize, int numSubQuantizers,
     options.indicesOptions = config.indicesOptions;
     options.usePrecomputed = config.usePrecomputedTables;
     options.precomputeCodesOnCpu = config.precomputeCodesOnCpu;
+    options.forcePinnedMemory = config.forcePinnedMemory;
     options.shard = useShards;
     options.shard_type = 1;
     options.verbose = verbose;
