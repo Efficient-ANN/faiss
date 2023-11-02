@@ -33,6 +33,9 @@ target_link_libraries(demo_ivfpq_gpu_sift_m PRIVATE faiss CUDA::cudart)
 add_executable(demo_ivfpq_cpu_gpu_sift EXCLUDE_FROM_ALL demo_ivfpq_cpu_gpu_sift.cpp)
 target_link_libraries(demo_ivfpq_cpu_gpu_sift PRIVATE faiss CUDA::cudart)
 
+add_executable(demo_imipq_gpu_sift_m_rand EXCLUDE_FROM_ALL demo_imipq_gpu_sift_m_rand.cpp)
+target_link_libraries(demo_imipq_gpu_sift_m_rand PRIVATE faiss CUDA::cudart)
+
 add_executable(demo_ivfpq_cpu_gpu_sift_m EXCLUDE_FROM_ALL demo_ivfpq_cpu_gpu_sift_m.cpp)
 target_link_libraries(demo_ivfpq_cpu_gpu_sift_m PRIVATE faiss CUDA::cudart)
 
