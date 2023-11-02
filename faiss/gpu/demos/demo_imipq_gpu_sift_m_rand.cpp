@@ -151,23 +151,32 @@ float *vecs_load(bool isVecFloat, std::string fileName, size_t num, int d, Rando
   return vecs;
 }
 
+size_t roundMemAllocUp(size_t size) {
+    return faiss::gpu::utils::roundUp(size, (size_t)256);
+}
+
+size_t roundMemAllocDown(size_t size) {
+    return size / 256 * 256;
+}
+
+size_t calcFixedMemSize(std::unordered_map<faiss::gpu::AllocType, size_t> allocSizePerTypeMap) {
+    size_t fixedMemSize = 0;
+    for (auto &&allocSizePerType : allocSizePerTypeMap) {
+        size_t allocSize = roundMemAllocUp(allocSizePerType.second);
+        fixedMemSize += roundMemAllocUp(allocSize);
+    }
+    return fixedMemSize;
+}
+
 size_t calcImiStructureMemSize(size_t d, size_t coarseCodebookSize,
                                size_t numSubQuantizers,
-                               size_t nbitsSubQuantizer, int roundSize) {
+                               size_t nbitsSubQuantizer) {
   size_t subCodebookSize = 1 << nbitsSubQuantizer;
-  size_t coarseQuantizerMemSize = faiss::gpu::utils::roundUp(
-      d * coarseCodebookSize * sizeof(float), (size_t)roundSize);
-  size_t normMemSize = faiss::gpu::utils::roundUp(
-      2 * coarseCodebookSize * sizeof(float), (size_t)roundSize);
-  size_t productQuantizerMemSize =
-      2 * faiss::gpu::utils::roundUp(d * subCodebookSize * sizeof(float),
-                                     (size_t)roundSize);
-  size_t precomputedMemSize = faiss::gpu::utils::roundUp(
-      coarseCodebookSize * subCodebookSize * numSubQuantizers * sizeof(float),
-      (size_t)roundSize);
-  size_t listOffsetMemSize = faiss::gpu::utils::roundUp(
-      coarseCodebookSize * coarseCodebookSize * sizeof(unsigned int),
-      (size_t)roundSize);
+  size_t coarseQuantizerMemSize = roundMemAllocUp(d * coarseCodebookSize * sizeof(float));
+  size_t normMemSize = roundMemAllocUp(2 * coarseCodebookSize * sizeof(float));
+  size_t productQuantizerMemSize = 2 * roundMemAllocUp(d * subCodebookSize * sizeof(float));
+  size_t precomputedMemSize = roundMemAllocUp(coarseCodebookSize * subCodebookSize * numSubQuantizers * sizeof(float));
+  size_t listOffsetMemSize = roundMemAllocUp(coarseCodebookSize * coarseCodebookSize * sizeof(unsigned int));
   return subCodebookSize + coarseQuantizerMemSize + normMemSize +
          productQuantizerMemSize + precomputedMemSize + listOffsetMemSize;
 }
@@ -277,42 +286,21 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
 
   faiss::gpu::IndicesOptions indiceOptions = faiss::gpu::INDICES_32_BIT;
 
-  size_t fixedMemSize = 0;
-  auto allocSizePerTypeMap =
-      faiss::gpu::GpuIndexIMIPQv2::getInvListsAllocSizePerTypeInfo(
-          numIndexingVecs, numSubQuantizers, nbitsSubQuantizer, false,
-          indiceOptions);
-
-  for (auto &&allocSizePerType : allocSizePerTypeMap) {
-    size_t allocSize =
-        faiss::gpu::utils::roundUp(allocSizePerType.second, (size_t)256);
-    fixedMemSize += faiss::gpu::utils::roundUp(allocSize, (size_t)roundSize);
-  }
-
-  size_t fixedMemSizePerGpu = 0;
-  auto allocSizePerTypeMapPerGpu =
-      faiss::gpu::GpuIndexIMIPQv2::getInvListsAllocSizePerTypeInfo(
-          numIndexingVecsPerGpu, numSubQuantizers, nbitsSubQuantizer, false,
-          indiceOptions);
-
-  for (auto &&allocSizePerType : allocSizePerTypeMapPerGpu) {
-    size_t allocSize =
-        faiss::gpu::utils::roundUp(allocSizePerType.second, (size_t)256);
-    fixedMemSizePerGpu +=
-        faiss::gpu::utils::roundUp(allocSize, (size_t)roundSize);
-  }
-
-  size_t imiStructureMemSize = calcImiStructureMemSize(
-      d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer, roundSize);
-
   size_t devFreeLimit = std::min(devFree, safeMemMargin);
 
-  size_t tempMemory = devFreeLimit - fixedMemSize - imiStructureMemSize;
-  tempMemory = tempMemory / 256 * 256;
+  size_t imiStructureMemSize = calcImiStructureMemSize(
+      d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer);
+  
+  auto allocSizePerTypeMap = faiss::gpu::GpuIndexIMIPQv2::getInvListsAllocSizePerTypeInfo(
+        numIndexingVecs, numSubQuantizers, nbitsSubQuantizer, false, indiceOptions);
+  auto allocSizePerTypeMapPerGpu = faiss::gpu::GpuIndexIMIPQv2::getInvListsAllocSizePerTypeInfo(
+        numIndexingVecsPerGpu, numSubQuantizers, nbitsSubQuantizer, false, indiceOptions);
 
-  size_t tempMemoryPerGpu =
-      devFreeLimit - fixedMemSizePerGpu - imiStructureMemSize;
-  tempMemoryPerGpu = tempMemoryPerGpu / 256 * 256;
+  size_t fixedMemSize = calcFixedMemSize(allocSizePerTypeMap);
+  size_t fixedMemSizePerGpu = calcFixedMemSize(allocSizePerTypeMapPerGpu);
+
+  size_t tempMemory = roundMemAllocDown(devFreeLimit - fixedMemSize - imiStructureMemSize);
+  size_t tempMemoryPerGpu = roundMemAllocDown(devFreeLimit - fixedMemSizePerGpu - imiStructureMemSize);
 
   std::cout << "tempMemoryPerGpu: " << tempMemoryPerGpu << std::endl;
   std::cout << "fixedMemSize: " << fixedMemSize << std::endl;
