@@ -246,7 +246,8 @@ IndexT * loadIndexToCpu(std::string fileName) {
   if (!fileName.empty()) {
     FILE *f = fopen(fileName.c_str(), "rb");
     if (f) {
-      clock_t tStart, tEnd, tGpu;
+      clock_t tStart, tEnd;
+      double tGpu;
       fclose(f);
       tStart = clock();
       indexCpu = dynamic_cast<IndexT *>(faiss::read_index(fileName.c_str()));
