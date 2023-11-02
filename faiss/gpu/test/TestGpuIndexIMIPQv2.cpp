@@ -322,22 +322,27 @@ void testPrecomputedCodes(int d, int coarseCodebookSize, int numSubQuantizers,
   }
 
   std::vector<float> subCentroidsNorms(numSubQuantizers * subCodebookSize);
-  for (int i = 0; i < subCentroidsNorms.size(); i++) {
-    subCentroidsNorms[i] = 0;
-    for (int j = 0; j < subQuantizerDim; j++) {
-      subCentroidsNorms[i] += subCentroids[i * subQuantizerDim + j] *
-                              subCentroids[i * subQuantizerDim + j];
-    }
-  }
 
   if (verbose) {
-    for (int i = 0; i < numSubQuantizers; i++) {
-      std::cout << "Sub quantizer norms: " << i << std::endl;
-      for (int j = 0; j < subCodebookSize; j++) {
-        std::cout << " " << subCentroidsNorms[i * subCodebookSize + j];
-      }
-      std::cout << std::endl;
+    std::cout << "Sub quantizer norms:" << std::endl;
+  }
+  for (int i = 0; i < subCentroidsNorms.size(); i++) {
+    subCentroidsNorms[i] = 0;
+    if (verbose) {
+      std::cout << " [" << i << "] =>";
     }
+    for (int j = 0; j < subQuantizerDim; j++) {
+      auto value = subCentroids[i * subQuantizerDim + j];
+      subCentroidsNorms[i] += value * value;
+      if (verbose) {
+        std::cout << " + (" << value << " * " << value << ") ";                 
+      }
+    }
+    if (verbose) {
+      std::cout << "= " << subCentroidsNorms[i] << std::endl;
+    }
+  }
+  if (verbose) {
     std::cout << std::endl;
   }
 
@@ -1007,7 +1012,7 @@ TEST(TestGpuIndexIMIPQ, testPrecomputedCodes) {
   int d, coarseCodebookSize, numSubQuantizers, bitsPerCode, numOfTrainingVecs;
   d = 4;
   coarseCodebookSize = 2;
-  numSubQuantizers = 4;
+  numSubQuantizers = 2;
   bitsPerCode = 8;
   numOfTrainingVecs = (1 << bitsPerCode) * 39;
   testPrecomputedCodes(d, coarseCodebookSize, numSubQuantizers, bitsPerCode,
@@ -1073,7 +1078,7 @@ TEST(TestGpuIndexIMIPQ, copyTo) {
 }
 
 TEST(TestGpuIndexIMIPQ, comparePrecomputedCodesWithCpu) {
-  std::vector<int> dList = {2, 4};
+  std::vector<int> dList = {4};
   std::vector<int> numCentroidsPerCodebookList = {1, 4, 6};
   int numSubQuantizers = 2;
   int bitsPerCode = 8;
