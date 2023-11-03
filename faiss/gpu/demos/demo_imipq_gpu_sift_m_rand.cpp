@@ -259,6 +259,78 @@ IndexT * loadIndexToCpu(std::string fileName) {
   return indexCpu;
 }
 
+void buildCoarseQuantizer(faiss::gpu::GpuIndexIMIPQv2 *imipqGpu, std::string fileNameCoarseQuantizer, bool isVecFloat, std::string fileNameTraining,
+  int numTrainingVecs, int d, RandomContext &randomContext, size_t readOffset = 0) {
+
+  std::unique_ptr<faiss::MultiIndexQuantizer> preBuildCoarseIndexCpu(loadIndexToCpu<faiss::MultiIndexQuantizer>(fileNameCoarseQuantizer));
+  if (preBuildCoarseIndexCpu) {
+    imipqGpu->quantizer->copyFrom(preBuildCoarseIndexCpu.get());
+  } else {
+    // train
+    clock_t tStart, tEnd;
+    double tGpu;
+    std::unique_ptr<float> trainingVecs(vecs_load(isVecFloat, fileNameTraining, numTrainingVecs, d, randomContext, readOffset));
+    tStart = clock();
+    imipqGpu->train(numTrainingVecs, trainingVecs.get());
+    tEnd = clock();
+    tGpu = (double)(tEnd - tStart) / CLOCKS_PER_SEC;
+    std::cout << "IMIPQ train time on GPU: " << tGpu << std::endl;
+
+    // save coase quantizer
+    if (!fileNameCoarseQuantizer.empty()) {
+      tStart = clock();
+      std::unique_ptr<faiss::Index> coarseIndexCpu(faiss::gpu::index_gpu_to_cpu(imipqGpu->quantizer));
+      faiss::gpu::CudaEvent cloneEnd(imipqGpu->getResources()->getDefaultStreamCurrentDevice());
+      cloneEnd.cpuWaitOnEvent();
+      faiss::write_index(coarseIndexCpu.get(), fileNameCoarseQuantizer.c_str());
+      tEnd = clock();
+      tGpu = (double)(tEnd - tStart) / CLOCKS_PER_SEC;
+      std::cout << "IMIPQ writting coarse quantizer: " << tGpu << std::endl;
+    }
+  }
+}
+
+void reserveIndexingSpace(faiss::gpu::GpuIndexIMIPQv2 *imipqGpu, bool isVecFloat, std::string fileNameIndexing,
+  int numIndexingVecs, int d, size_t numVecsTile, RandomContext &randomContext, size_t readOffset = 0) {     
+  clock_t tStart, tEnd;
+  double tGpu;
+  tStart = clock();
+  for (size_t i = 0; i < numIndexingVecs; i += numVecsTile) {
+    size_t currentNumVecsTile = std::min(numVecsTile, numIndexingVecs - i);
+    
+    std::unique_ptr<float> indexingVecs(vecs_load(isVecFloat, fileNameIndexing, currentNumVecsTile, d, randomContext, readOffset + i));
+
+    imipqGpu->updateExpectedNumAddsPerList(currentNumVecsTile, indexingVecs.get());
+    faiss::gpu::CudaEvent updateEnd(imipqGpu->getResources()->getDefaultStreamCurrentDevice());
+    updateEnd.cpuWaitOnEvent();
+  }
+
+  imipqGpu->applyExpectedNumAddsPerList();
+  faiss::gpu::CudaEvent applyEnd(imipqGpu->getResources()->getDefaultStreamCurrentDevice());
+  applyEnd.cpuWaitOnEvent();
+
+  imipqGpu->resetExpectedNumAddsPerList();
+
+  tEnd = clock();
+  tGpu = (double)(tEnd - tStart) / CLOCKS_PER_SEC;
+  std::cout << "IMIPQ reserve time on GPU: " << tGpu << std::endl;
+}
+
+void addToIndex(faiss::gpu::GpuIndexIMIPQv2 *imipqGpu, bool isVecFloat, std::string fileNameIndexing,
+  int numIndexingVecs, int d, size_t numVecsTile, RandomContext &randomContext, size_t readOffset = 0) {
+  clock_t tStart, tEnd;
+  double tGpu;
+  tStart = clock();
+  for (size_t i = 0; i < numIndexingVecs; i += numVecsTile) {
+    size_t currentNumVecsTile = std::min(numVecsTile, numIndexingVecs - i);
+    std::unique_ptr<float> indexingVecs(vecs_load(isVecFloat, fileNameIndexing, currentNumVecsTile, d, randomContext, i));
+    imipqGpu->add(currentNumVecsTile, indexingVecs.get());
+  }
+  tEnd = clock();
+  tGpu = (double)(tEnd - tStart) / CLOCKS_PER_SEC;
+  std::cout << "IMIPQ add time on GPU: " << tGpu << std::endl;
+}
+
 void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuantizers,
                 int nbitsSubQuantizer, std::string fileNameTraining,
                 size_t numTrainingVecs, std::string fileNameIndexing,
@@ -272,10 +344,8 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
   
   size_t devFree = 0;
   size_t devTotal = 0;
-  constexpr int roundSize = 256;
 
   size_t numIndexingVecsPerGpu;
-
   if (useShards) {
     numIndexingVecsPerGpu = numIndexingVecs / ngpus + numIndexingVecs % ngpus;
   } else {
@@ -311,12 +381,14 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
   std::cout << "devFreeLimit: " << devFreeLimit << std::endl;
   std::cout << "tempMemory: " << tempMemory << std::endl;
 
+  // set maximum available memory for tiling over vectors while adding them to the GPU
+  size_t maxAddTileSize = (size_t)8 * 1024 * 1024 * 1024;
+  size_t numVecsTile = maxAddTileSize / (d * sizeof(float));
+  numVecsTile = std::min(numVecsTile, numIndexingVecs);
+  numVecsTile = std::min(numVecsTile, (size_t)10000);
+  numVecsTile = std::max(numVecsTile, (size_t)1);
+
   faiss::gpu::GpuIndexIMIPQConfig config;
-  std::vector<faiss::gpu::GpuResourcesProvider *> resVector;
-  std::vector<int> devs;
-  clock_t tStart, tEnd;
-  double tGpu;
-  int dRead;
 
   config.memorySpace = faiss::gpu::MemorySpace::Fixed;
   // config.multiIndexConfig.memorySpace = faiss::gpu::MemorySpace::Fixed;
@@ -335,69 +407,20 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
       res.setTempMemory(tempMemory);
       std::unique_ptr<faiss::gpu::GpuIndexIMIPQv2> imipqGpu(
         new faiss::gpu::GpuIndexIMIPQv2(&res, d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer, config));
-      
-      // set verbose according to provided parameter
       imipqGpu->verbose = verbose;
 
-      { // build coarse quantizer
-        std::unique_ptr<faiss::MultiIndexQuantizer> preBuildCoarseIndexCpu(loadIndexToCpu<faiss::MultiIndexQuantizer>(fileNameCoarseQuantizer));
-        if (preBuildCoarseIndexCpu) {
-            imipqGpu->quantizer->copyFrom(preBuildCoarseIndexCpu.get());
-        } else {
-          // train
-          std::unique_ptr<float> trainingVecs(vecs_load(isVecFloat, fileNameTraining, numTrainingVecs, d, randomContext, 0));
-          tStart = clock();
-          imipqGpu->train(numTrainingVecs, trainingVecs.get());
-          tEnd = clock();
-          tGpu = (double)(tEnd - tStart) / CLOCKS_PER_SEC;
-          std::cout << "IMIPQ train time on GPU: " << tGpu << std::endl;
-
-          // save coase quantizer
-          if (!fileNameCoarseQuantizer.empty()) {
-            std::unique_ptr<faiss::Index> coarseIndexCpu(faiss::gpu::index_gpu_to_cpu(imipqGpu->quantizer));
-            faiss::gpu::CudaEvent cloneEnd(res.getResources()->getDefaultStreamCurrentDevice());
-            cloneEnd.cpuWaitOnEvent();
-            faiss::write_index(coarseIndexCpu.get(), fileNameCoarseQuantizer.c_str());
-          }
-        }
-      }
-
+      // train or load the coarse quantizer
+      buildCoarseQuantizer(imipqGpu.get(), fileNameCoarseQuantizer, isVecFloat, fileNameTraining, numTrainingVecs, d, randomContext);
+  
       printDeviceMemory();
 
       int64_t initSeed = 0;
       int64_t endSeed = 0;
       
-      // set maximum available memory for tiling over vectors while adding them to the GPU
-      size_t maxAddTileSize = (size_t)8 * 1024 * 1024 * 1024;
-      size_t numVecsTile = maxAddTileSize / (d * sizeof(float));
-      numVecsTile = std::min(numVecsTile, numIndexingVecs);
-      numVecsTile = std::min(numVecsTile, (size_t)10000);
-      numVecsTile = std::max(numVecsTile, (size_t)1);
-      
       // save current initial seed for using it again while adding the vectors
       initSeed = randomContext.seed;
 
-      { // reserve space for indexing        
-        tStart = clock();
-        for (size_t i = 0; i < numIndexingVecs; i += numVecsTile) {
-          size_t currentNumVecsTile = std::min(numVecsTile, numIndexingVecs - i);
-          
-          std::unique_ptr<float> indexingVecs(vecs_load(isVecFloat, fileNameIndexing, currentNumVecsTile, d, randomContext, i));
-
-          imipqGpu->updateExpectedNumAddsPerList(currentNumVecsTile, indexingVecs.get());
-          faiss::gpu::CudaEvent updateEnd(res.getResources()->getDefaultStreamCurrentDevice());
-          updateEnd.cpuWaitOnEvent();
-        }
-
-        imipqGpu->applyExpectedNumAddsPerList();
-        faiss::gpu::CudaEvent applyEnd(res.getResources()->getDefaultStreamCurrentDevice());
-        applyEnd.cpuWaitOnEvent();
-
-        tEnd = clock();
-        tGpu = (double)(tEnd - tStart) / CLOCKS_PER_SEC;
-        std::cout << "IMIPQ reserve time on GPU: " << tGpu << std::endl;
-        imipqGpu->resetExpectedNumAddsPerList();
-      }
+      reserveIndexingSpace(imipqGpu.get(), isVecFloat, fileNameIndexing, numIndexingVecs, d, numVecsTile, randomContext);
 
       // save it for assertion
       endSeed = randomContext.seed;
@@ -406,26 +429,17 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
 
       randomContext.seed = initSeed;
 
-      { // add
-        tStart = clock();
-        for (size_t i = 0; i < numIndexingVecs; i += numVecsTile) {
-          size_t currentNumVecsTile = std::min(numVecsTile, numIndexingVecs - i);
-          std::unique_ptr<float> indexingVecs(vecs_load(isVecFloat, fileNameIndexing, currentNumVecsTile, d, randomContext, i));
-          imipqGpu->add(currentNumVecsTile, indexingVecs.get());
-        }
-        tEnd = clock();
-        tGpu = (double)(tEnd - tStart) / CLOCKS_PER_SEC;
-        std::cout << "IMIPQ add time on GPU: " << tGpu << std::endl;
-      }
+      addToIndex(imipqGpu.get(), isVecFloat, fileNameIndexing, numIndexingVecs, d, numVecsTile, randomContext);
 
       assert(randomContext.seed == endSeed);
+
+      printDeviceMemory();
 
       std::cout << "maxListLength: " << imipqGpu->getMaxListLength()
                 << std::endl;
 
       indexCpu.reset(faiss::gpu::index_gpu_to_cpu(imipqGpu.get()));
-      faiss::gpu::CudaEvent cloneEnd(
-          res.getResources()->getDefaultStreamCurrentDevice());
+      faiss::gpu::CudaEvent cloneEnd(imipqGpu->getResources()->getDefaultStreamCurrentDevice());
       cloneEnd.cpuWaitOnEvent();
     }
 
@@ -437,6 +451,9 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
   }
 
   if (profile) {
+    clock_t tStart, tEnd;
+    double tGpu;
+
     faiss::gpu::GpuMultipleClonerOptions options;
     options.memorySpace = config.memorySpace;
     options.indicesOptions = config.indicesOptions;
@@ -446,6 +463,9 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
     options.shard = useShards;
     options.shard_type = 1;
     options.verbose = verbose;
+
+    std::vector<faiss::gpu::GpuResourcesProvider *> resVector;
+    std::vector<int> devs;
 
     std::cout << "Ininting resource for multiple GPUs" << std::endl;
     initResourcesMultiGpu(ngpus, allocSizePerTypeMapPerGpu, tempMemoryPerGpu,
@@ -475,6 +495,8 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
     std::unique_ptr<float> queries(vecs_load(isVecFloat, fileNameQueries, (size_t)numQueriesList[numQueriesEnd - 1], d, randomContext, queriesOffset));
 
     std::unique_ptr<int> groundTruth;
+    int dRead;
+
     if (!fileNameGroundTruth.empty()) {
       groundTruth.reset(faiss::ivecs_read(fileNameGroundTruth.c_str(), numQueriesList[numQueriesEnd - 1], 0, &dRead));
     }
@@ -539,10 +561,10 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
         std::cout << "QUERY UNKNOWN EXCEPTION" << std::endl;
       }
     }
-  }
-
-  for (int i = 0; i < resVector.size(); i++) {
-    delete resVector[i];
+    
+    for (int i = 0; i < resVector.size(); i++) {
+      delete resVector[i];
+    }
   }
 }
 
