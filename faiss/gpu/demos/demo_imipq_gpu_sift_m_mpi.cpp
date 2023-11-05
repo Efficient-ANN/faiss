@@ -587,6 +587,9 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
                 int nProcesses, int processRank, bool sharedGpuProcess, bool shardPerProcess,
                 size_t safeMemMargin, std::string fileNameCoarseQuantizer,
                 std::string fileNameIndex, bool profile, bool allocLogging, bool verbose, int nRuns, int pinnedMemoryMode) {
+  
+  CUDA_VERIFY(cudaProfilerStop());
+  
   RandomContext randomContext;
   
   int numDevices = faiss::gpu::getNumDevices();
@@ -881,6 +884,8 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
       groundTruth.reset(faiss::ivecs_read(fileNameGroundTruth.c_str(), numQueriesList[numQueriesEnd - 1], 0, &dRead));
     }
 
+    CUDA_VERIFY(cudaProfilerStart());
+
     for (int i = numQueriesBegin > 0 ? numQueriesBegin : 0; i < numQueriesEnd;
          i++) {
       int numQueries = numQueriesList[i];
@@ -948,6 +953,8 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
         processPrint(processRank, "QUERY UNKNOWN EXCEPTION");
       }
     }
+    
+    CUDA_VERIFY(cudaProfilerStop());
     
     for (int i = 0; i < resVector.size(); i++) {
       delete resVector[i];
