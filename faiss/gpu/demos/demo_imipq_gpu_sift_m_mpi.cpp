@@ -885,6 +885,7 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
     }
 
     CUDA_VERIFY(cudaProfilerStart());
+    faiss::gpu::synchronizeAllDevices();
 
     for (int i = numQueriesBegin > 0 ? numQueriesBegin : 0; i < numQueriesEnd;
          i++) {
@@ -953,7 +954,7 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
         processPrint(processRank, "QUERY UNKNOWN EXCEPTION");
       }
     }
-    
+
     CUDA_VERIFY(cudaProfilerStop());
     
     for (int i = 0; i < resVector.size(); i++) {
