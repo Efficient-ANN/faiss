@@ -210,19 +210,17 @@ void search(int processRank, int nProcesses, bool shardPerProcess, int numIndexi
               }
             }
 
-            std::vector<long> translations(nProcesses, 0);
-
-            // In case we split the index per processes, we must shift the received labels
             if (shardPerProcess) {
+              // In case we split the index per processes, we must shift the received labels
+              std::vector<long> translations(nProcesses, 0);
               translations[0] = 0;
               translations[1] = remainingIndexingVecs + numIndexingVecs;
               for (int currRank = 1; currRank + 1 < nProcesses; currRank++) {
                 translations[currRank + 1] = translations[currRank] + numIndexingVecs;
               }
-            }
-            merge_tables<faiss::CMin<float, int>>(numQueries, k, nProcesses, 
+              merge_tables<faiss::CMin<float, int>>(numQueries, k, nProcesses, 
               heapDistances.data(), heapLabels.data(), outDistances, outLabels, translations);
-
+            }
           }
         }
         tEnd = clock();
@@ -247,6 +245,8 @@ void search(int processRank, int nProcesses, bool shardPerProcess, int numIndexi
       timeCpuOut << "std timer (millis): " << tCpuStd / nRuns;
       processPrint(processRank, timeCpuOut);
 
+      MPI_Barrier(MPI_COMM_WORLD);
+      
       if (processRank == 0) {
         std::stringstream timeOut;
         timeOut << "IMIPQ search time on GPU (seconds): " << tTotal / nRuns << std::endl;
@@ -277,7 +277,7 @@ void search(int processRank, int nProcesses, bool shardPerProcess, int numIndexi
           }
           processPrint(processRank, resultOut);
         }
-
+        
         std::stringstream recallOut;
         if (groundTruth != nullptr) {
           int n_1 = 0, n_10 = 0, n_100 = 0, n_1000, n_1024 = 0;
@@ -304,12 +304,14 @@ void search(int processRank, int nProcesses, bool shardPerProcess, int numIndexi
               }
             }
           }
+          recallOut << std::endl;
           recallOut << "R@1 = " << n_1 / double(numQueries) << std::endl;
           recallOut << "R@10 = " << n_10 / double(numQueries) << std::endl;
           recallOut << "R@100 = " << n_100 / double(numQueries) << std::endl;
           recallOut << "R@1000 = " << n_1000 / double(numQueries) << std::endl;
           recallOut << "R@1024 = " << n_1024 / double(numQueries);
         } else {
+          recallOut << std::endl;
           recallOut << "R@1 = NOT COMPUTED" << std::endl;
           recallOut << "R@10 = NOT COMPUTED" << std::endl;
           recallOut << "R@100 = NOT COMPUTED" << std::endl;
@@ -397,13 +399,14 @@ size_t calcImiStructureMemSize(size_t d, size_t coarseCodebookSize,
 }
 
 void initResourcesMultiGpu(
+    int deviceIdInit,
     int ngpus,
     std::unordered_map<faiss::gpu::AllocType, size_t>
         &allocSizePerTypeMapPerGpu,
     size_t tempMemory,
     std::vector<faiss::gpu::GpuResourcesProvider *> &resVector,
     std::vector<int> &devs, bool allocLogging, int pinnedMemoryMode) {
-  for (int i = 0; i < ngpus; i++) {
+  for (int i = deviceIdInit; i < ngpus; i++) {
     faiss::gpu::StandardGpuResources *res;
     res = new faiss::gpu::StandardGpuResources(allocSizePerTypeMapPerGpu);
     res->setLogMemoryAllocations(allocLogging);
@@ -412,7 +415,6 @@ void initResourcesMultiGpu(
       res->setPinnedMemory(0);
     }
     resVector.push_back(res);
-    std::cout << "i:" << i << std::endl;
     devs.push_back(i);
   }
 }
@@ -582,7 +584,7 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
                 size_t queriesOffset, std::string fileNameGroundTruth,
                 int numQueriesBegin, int numQueriesEnd, int nprobeBegin,
                 int nprobeEnd, int kBegin, int kEnd, int ngpus, bool useShards, 
-                int nProcesses, int processRank, bool sharedGpuProcess,
+                int nProcesses, int processRank, bool sharedGpuProcess, bool shardPerProcess,
                 size_t safeMemMargin, std::string fileNameCoarseQuantizer,
                 std::string fileNameIndex, bool profile, bool allocLogging, bool verbose, int nRuns, int pinnedMemoryMode) {
   RandomContext randomContext;
@@ -603,7 +605,6 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
     deviceIdInit = processRank * ngpus;
   }
 
-  bool shardPerProcess = true;
   if (shardPerProcess) {
     numIndexingVecs /= nProcesses;
     // the first process manages the remaining number of vecs
@@ -690,6 +691,7 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
   // config.multiIndexConfig.memorySpace = faiss::gpu::MemorySpace::Fixed;
   config.indicesOptions = indiceOptions;
   config.usePrecomputedTables = true;
+  config.device = deviceIdInit;
 
   if (pinnedMemoryMode == 2) {
     config.forcePinnedMemory = true;
@@ -701,7 +703,7 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
   
 
   { // Build Index
-    bool fileNamIndexIsEmpty = fileNameIndex.empty();
+    bool fileNameIndexIsEmpty = fileNameIndex.empty();
 
     int storedRank = processRank;
     if (!shardPerProcess) {
@@ -729,6 +731,7 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
         if (processRank == 0) {
           std::stringstream outTrainStart, outEnd;
           outTrainStart << "Coarse quantizer - loading: " << fileNameCoarseQuantizer;
+          outTrainStart << " (seed == " << randomContext.seed << ")";
           processPrint(processRank, outTrainStart);
           // train or load the coarse quantizer
           buildCoarseQuantizer(processRank, imipqGpu.get(), fileNameCoarseQuantizer, isVecFloat, fileNameTraining, numTrainingVecs, d, randomContext);
@@ -770,6 +773,7 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
         std::stringstream addToIndexStart;
         addToIndexStart << "Adding " << numIndexingVecs << " vectors from " << totalNumIndexingVecs 
                         << " to index with " << indexToAddOffset << " offset";
+        addToIndexStart << " (seed == " << randomContext.seed << ")";
         processPrint(processRank, addToIndexStart);
         
         int64_t initSeed = 0;
@@ -806,12 +810,14 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
         cloneEnd.cpuWaitOnEvent();
       }
       
-      if (!fileNamIndexIsEmpty) {
-        std::stringstream writeIndexStart;
-        writeIndexStart << "writing: " << fileNameIndex << "...";
-        processPrint(processRank, writeIndexStart);
-        faiss::write_index(indexCpu.get(), fileNameIndex.c_str());
-        processPrint(processRank, "done");
+      if (!fileNameIndexIsEmpty) {
+        if (shardPerProcess || processRank == 0)  {
+          std::stringstream writeIndexStart;
+          writeIndexStart << "writing: " << fileNameIndex << "...";
+          processPrint(processRank, writeIndexStart);
+          faiss::write_index(indexCpu.get(), fileNameIndex.c_str());
+          processPrint(processRank, "done");
+        }
       }
     }
 
@@ -834,7 +840,7 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
       options.verbose = verbose;
       
       processPrint(processRank, "Ininting resource for multiple GPUs");
-      initResourcesMultiGpu(ngpus, allocSizePerTypeMapPerGpu, tempMemoryPerGpu,
+      initResourcesMultiGpu(deviceIdInit, ngpus, allocSizePerTypeMapPerGpu, tempMemoryPerGpu,
                             resVector, devs, allocLogging, pinnedMemoryMode);
 
       processPrint(processRank, "Moving index from cpu to multiple GPUs: ");
@@ -925,7 +931,7 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
               processPrint(processRank, searchInfoOut);
             }
 
-            search(processRank, nProcesses, 1, numIndexingVecs, remainingIndexingVecs,
+            search(processRank, nProcesses, shardPerProcess, numIndexingVecs, remainingIndexingVecs,
                    indexMultiGpu.get(), queries.get(), groundTruth.get(), numQueries, kBegin,
                    kEnd, dRead, nRuns);
 
@@ -957,7 +963,8 @@ int main(int argc, char **argv) {
 
   int d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer, queriesOffset,
       numQueriesBegin, numQueriesEnd, kBegin, kEnd, nprobeBegin, nprobeEnd,
-      isFloat, numThreads, ngpus, useShards, sharedGpuProcess, profile, allocLogging, verbose, nRuns, pinnedMemoryMode;
+      isFloat, numThreads, ngpus, useShards, sharedGpuProcess, shardPerProcess,
+      profile, allocLogging, verbose, nRuns, pinnedMemoryMode;
   size_t numTrainingVecs, numIndexingVecs;
   std::string fileNameTraining, fileNameIndexing, fileNameQueries,
       fileNameGroundTruth, fileNameCoarseQuantizer, fileNameIndex;
@@ -985,14 +992,15 @@ int main(int argc, char **argv) {
   ngpus = argc > 20 ? std::stoi(argv[20]) : 2;
   useShards = argc > 21 ? std::stoi(argv[21]) : 0;
   sharedGpuProcess = argc > 22 ? std::stoi(argv[22]) : 0;
-  safeMemMargin = argc > 23 ? std::stoul(argv[23]) : 0;
-  fileNameCoarseQuantizer = argc > 24 ? argv[24] : "";
-  fileNameIndex = argc > 25 ? argv[25] : "";
-  profile = argc > 26 ? std::stoi(argv[26]) : 1;
-  allocLogging = argc > 27 ? std::stoi(argv[27]) : 0;
-  verbose = argc > 28 ? std::stoi(argv[28]) : 0;
-  nRuns = argc > 29 ? std::stoi(argv[29]) : 5;
-  pinnedMemoryMode = argc > 30 ? std::stoi(argv[30]) : 1;
+  shardPerProcess = argc > 23 ? std::stoi(argv[23]) : 1;
+  safeMemMargin = argc > 24 ? std::stoul(argv[24]) : 0;
+  fileNameCoarseQuantizer = argc > 25 ? argv[25] : "";
+  fileNameIndex = argc > 26 ? argv[26] : "";
+  profile = argc > 27 ? std::stoi(argv[27]) : 1;
+  allocLogging = argc > 28 ? std::stoi(argv[28]) : 0;
+  verbose = argc > 29 ? std::stoi(argv[29]) : 0;
+  nRuns = argc > 30 ? std::stoi(argv[30]) : 5;
+  pinnedMemoryMode = argc > 31 ? std::stoi(argv[31]) : 1;
 
   int nProcesses, processRank;
 
@@ -1011,7 +1019,7 @@ int main(int argc, char **argv) {
               numIndexingVecs, fileNameQueries, queriesOffset,
               fileNameGroundTruth, numQueriesBegin, numQueriesEnd,
               nprobeBegin, nprobeEnd, kBegin, kEnd, ngpus, useShards, 
-              nProcesses, processRank, sharedGpuProcess,
+              nProcesses, processRank, sharedGpuProcess, shardPerProcess,
               safeMemMargin, fileNameCoarseQuantizer, fileNameIndex,
               profile, allocLogging, verbose, nRuns, pinnedMemoryMode);
 
