@@ -21,6 +21,7 @@ make demo_memory -j8
 make demo_vector_residual -j8
 make demo_imipq_gpu_sift_m_v2 -j8
 make demo_memory_v2 -j8
+make demo_imipq_gpu_sift_m_mpi -j8
 
 #cd faiss/gpu/demos
 #make demo_imipq_gpu_sift_m -j8

@@ -36,6 +36,8 @@
 #include <omp.h>
 #include <mpi.h>
 
+#include <cuda_profiler_api.h>
+
 void processPrint(int processRank, std::string str) {
   std::stringstream out;
   out << "Process " << processRank << " << " <<  str << std::endl;
