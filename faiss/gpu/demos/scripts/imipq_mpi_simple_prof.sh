@@ -21,9 +21,6 @@ nvprof --version
 RESULT_DIR=/petrobr/parceirosbr/petrobrasiageo/willian.barreiros/git/a/faiss_imipq/demo_out
 DEMO_DIR=/petrobr/parceirosbr/petrobrasiageo/willian.barreiros/git/a/faiss_imipq/build/faiss/gpu/demos
 
-RESULT_DIR=/home/alanp/git/faiss_imipq/build/faiss/gpu/demos/results
-DEMO_DIR=/home/alanp/git/faiss_imipq/build/faiss/gpu/demos
-
 while true; do nvidia-smi >> gpu.log; sleep 2; done &
 
 mpirun -np 1  ${DEMO_DIR}/demo_imipq_gpu_sift_m_mpi 128 16 8 8 "" 624 "" 256 "" 0 "" 6 7 6 7 6 7 0 8 1 1 0 1 4194304 ${RESULT_DIR}/coarse/index_coarse_imipq16_624_m_replica_rand.bin ${RESULT_DIR}/index/index_imipq16_624_m_replica_256_rand.bin 0 0 0 1 1 | tee ${RESULT_DIR}/outs/imipq_mpi_simple_prof_shard_1_build.txt
