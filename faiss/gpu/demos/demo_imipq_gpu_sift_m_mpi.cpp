@@ -665,23 +665,31 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
   size_t fixedMemSize = calcFixedMemSize(allocSizePerTypeMap);
   size_t fixedMemSizePerGpu = calcFixedMemSize(allocSizePerTypeMapPerGpu);
 
-  assert(devFreeLimit > fixedMemSize + imiStructureMemSize);
-  assert(devFreeLimit > fixedMemSizePerGpu + imiStructureMemSize);
+  devFreeLimit = std::max(devFreeLimit, fixedMemSize + imiStructureMemSize);
+  devFreeLimit = std::max(devFreeLimit, fixedMemSizePerGpu + imiStructureMemSize);
+
+  std::stringstream memoryInfoStr1;
+  memoryInfoStr1 << std::endl;
+  memoryInfoStr1 << "fixedMemSize: " << fixedMemSize << std::endl;
+  memoryInfoStr1 << "fixedMemSizePerGpu: " << fixedMemSizePerGpu << std::endl;
+  memoryInfoStr1 << "imiStructureMemSize: " << imiStructureMemSize << std::endl;
+  memoryInfoStr1 << "devFree: " << devFree << std::endl;
+  memoryInfoStr1 << "safeMemMargin: " << safeMemMargin << std::endl;
+  memoryInfoStr1 << "devFreeLimit: " << devFreeLimit << std::endl;
+  processPrint(processRank, memoryInfoStr1);
+
+
+  assert(devFreeLimit >= fixedMemSize + imiStructureMemSize);
+  assert(devFreeLimit >= fixedMemSizePerGpu + imiStructureMemSize);
 
   size_t tempMemory = roundMemAllocDown(devFreeLimit - fixedMemSize - imiStructureMemSize);
   size_t tempMemoryPerGpu = roundMemAllocDown(devFreeLimit - fixedMemSizePerGpu - imiStructureMemSize);
 
-  std::stringstream memoryInfoStr;
-  memoryInfoStr << std::endl;
-  memoryInfoStr << "tempMemoryPerGpu: " << tempMemoryPerGpu << std::endl;
-  memoryInfoStr << "fixedMemSize: " << fixedMemSize << std::endl;
-  memoryInfoStr << "fixedMemSizePerGpu: " << fixedMemSizePerGpu << std::endl;
-  memoryInfoStr << "imiStructureMemSize: " << imiStructureMemSize << std::endl;
-  memoryInfoStr << "devFree: " << devFree << std::endl;
-  memoryInfoStr << "safeMemMargin: " << safeMemMargin << std::endl;
-  memoryInfoStr << "devFreeLimit: " << devFreeLimit << std::endl;
-  memoryInfoStr << "tempMemory: " << tempMemory << std::endl;
-  processPrint(processRank, memoryInfoStr);
+  std::stringstream memoryInfoStr2;
+  memoryInfoStr2 << "tempMemory: " << tempMemory << std::endl;
+  memoryInfoStr2 << "tempMemoryPerGpu: " << tempMemoryPerGpu << std::endl;;
+  
+  processPrint(processRank, memoryInfoStr2);
 
   // set maximum available memory for tiling over vectors while adding them to the GPU
   size_t maxAddTileSize = (size_t)8 * 1024 * 1024 * 1024;
