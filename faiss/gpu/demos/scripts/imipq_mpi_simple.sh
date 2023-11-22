@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --nodes=1
 #SBATCH -p ict_gpu       #Fila (partition) a ser utilizada
-#SBATCH --time=0:05:00
+#SBATCH --time=0:00:15
 #SBATCH --account=petrobrasiageo
 #SBATCH --exclusive         #Utilização exclusiva dos nós
 #SBATCH --job-name="a1test"
