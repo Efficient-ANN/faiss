@@ -676,7 +676,7 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
                 int nProcesses, int processRank, bool sharedGpuProcess, bool shardPerProcess,
                 size_t safeMemMargin, std::string fileNameCoarseQuantizer,
                 std::string fileNameIndex, bool profile, bool allocLogging, bool verbose, int nRuns, 
-                int pinnedMemoryMode, int usePrecomputed, int useGpu) {
+                int pinnedMemoryMode, int usePrecomputed, int useMultiIndex, int useGpu) {
   
   CUDA_VERIFY(cudaProfilerStop());
   
@@ -939,6 +939,15 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
       processPrint(processRank, indexMovedOut);
       indexCpu.release();
     } else {
+      faiss::IndexIVFPQ *ivfpqCpu =
+                    dynamic_cast<faiss::IndexIVFPQ *>(indexCpu.get());
+      if (usePrecomputed) {
+        if (useMultiIndex) {
+          ivfpqCpu->use_precomputed_table = 2;
+        } else {
+          ivfpqCpu->use_precomputed_table = 1;
+        }
+      }
       finalIndex = std::move(indexCpu);
     }
 
@@ -1128,7 +1137,7 @@ int main(int argc, char **argv) {
               nProcesses, processRank, sharedGpuProcess, shardPerProcess,
               safeMemMargin, fileNameCoarseQuantizer, fileNameIndex,
               profile, allocLogging, verbose, nRuns, pinnedMemoryMode, 
-              usePrecomputed, useGpu);
+              usePrecomputed, useMultiIndex, useGpu);
   } else {
     demo_imipq<faiss::gpu::GpuIndexIVFPQConfig, faiss::gpu::GpuIndexIVFPQ>(
               isFloat, d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer,
@@ -1139,7 +1148,7 @@ int main(int argc, char **argv) {
               nProcesses, processRank, sharedGpuProcess, shardPerProcess,
               safeMemMargin, fileNameCoarseQuantizer, fileNameIndex,
               profile, allocLogging, verbose, nRuns, pinnedMemoryMode, 
-              usePrecomputed, useGpu);
+              usePrecomputed, useMultiIndex, useGpu);
   }
   
 
