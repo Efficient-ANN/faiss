@@ -13,6 +13,7 @@
 #include <faiss/IndexIVFPQ.h>
 #include <faiss/IndexPQ.h>
 #include <faiss/gpu/GpuCloner.h>
+#include <faiss/gpu/GpuIndexIVFPQ.h>
 #include <faiss/gpu/GpuIndexIMIPQv2.h>
 #include <faiss/gpu/GpuIndicesOptions.h>
 #include <faiss/gpu/StandardGpuResources.h>
@@ -499,7 +500,8 @@ IndexT * loadIndexToCpu(int processRank, std::string fileName) {
   return indexCpu;
 }
 
-int buildCoarseQuantizer(int processRank, faiss::gpu::GpuIndexIMIPQv2 *imipqGpu, std::string fileNameCoarseQuantizer, bool isVecFloat, std::string fileNameTraining,
+template <class IndexT>
+int buildCoarseQuantizer(int processRank, IndexT *imipqGpu, std::string fileNameCoarseQuantizer, bool isVecFloat, std::string fileNameTraining,
   int numTrainingVecs, int d, RandomContext &randomContext, size_t readOffset = 0) {
   std::unique_ptr<faiss::Index> indexCpuTrainedOnly(loadIndexToCpu<faiss::IndexIVFPQ>(processRank, fileNameCoarseQuantizer));
   if (indexCpuTrainedOnly) {
@@ -534,7 +536,8 @@ int buildCoarseQuantizer(int processRank, faiss::gpu::GpuIndexIMIPQv2 *imipqGpu,
   return 1;
 }
 
-void reserveIndexingSpace(int processRank, faiss::gpu::GpuIndexIMIPQv2 *imipqGpu, bool isVecFloat, std::string fileNameIndexing,
+template <class IndexT>
+void reserveIndexingSpace(int processRank, IndexT *imipqGpu, bool isVecFloat, std::string fileNameIndexing,
   int numIndexingVecs, int d, size_t numVecsTile, RandomContext &randomContext, size_t readOffset = 0) {     
   clock_t tStart, tEnd;
   double tGpu;
@@ -562,7 +565,8 @@ void reserveIndexingSpace(int processRank, faiss::gpu::GpuIndexIMIPQv2 *imipqGpu
   processPrint(processRank, out);
 }
 
-void addToIndex(int processRank, faiss::gpu::GpuIndexIMIPQv2 *imipqGpu, bool isVecFloat, std::string fileNameIndexing,
+template <class IndexT>
+void addToIndex(int processRank, IndexT *imipqGpu, bool isVecFloat, std::string fileNameIndexing,
   int numIndexingVecs, int d, size_t numVecsTile, RandomContext &randomContext, size_t readOffset = 0) {
   clock_t tStart, tEnd;
   double tGpu;
@@ -579,6 +583,89 @@ void addToIndex(int processRank, faiss::gpu::GpuIndexIMIPQv2 *imipqGpu, bool isV
   processPrint(processRank, out);
 }
 
+template <class ConfigT>
+ConfigT getConfig(faiss::gpu::IndicesOptions indiceOptions, int deviceIdInit, int pinnedMemoryMode, int usePrecomputed);
+
+template <>
+faiss::gpu::GpuIndexIMIPQConfig getConfig<faiss::gpu::GpuIndexIMIPQConfig>(
+  faiss::gpu::IndicesOptions indiceOptions, int deviceIdInit, int pinnedMemoryMode, int usePrecomputeds) {
+  faiss::gpu::GpuIndexIMIPQConfig config;
+  config.memorySpace = faiss::gpu::MemorySpace::Fixed;
+  // config.multiIndexConfig.memorySpace = faiss::gpu::MemorySpace::Fixed;
+  config.indicesOptions = indiceOptions;
+  config.usePrecomputedTables = true;
+  config.device = deviceIdInit;
+
+  if (pinnedMemoryMode == 2) {
+    config.forcePinnedMemory = true;
+  }
+  return config;
+}
+
+template <>
+faiss::gpu::GpuIndexIVFPQConfig getConfig<faiss::gpu::GpuIndexIVFPQConfig>(
+  faiss::gpu::IndicesOptions indiceOptions, int deviceIdInit, int pinnedMemoryMode, int usePrecomputed) {
+  faiss::gpu::GpuIndexIVFPQConfig config;
+  config.memorySpace = faiss::gpu::MemorySpace::Fixed;
+  // config.multiIndexConfig.memorySpace = faiss::gpu::MemorySpace::Fixed;
+  config.indicesOptions = indiceOptions;
+  config.usePrecomputedTables = usePrecomputed;
+  config.device = deviceIdInit;
+  return config;
+}
+
+template <class ConfigT, class IndexT>
+IndexT * getIndex(faiss::gpu::StandardGpuResources &res, int d,
+  int coarseCodebookSize, int numSubQuantizers, int nbitsSubQuantizer, ConfigT &config);
+
+template <>
+faiss::gpu::GpuIndexIMIPQv2 * getIndex(faiss::gpu::StandardGpuResources &res, int d,
+  int coarseCodebookSize, int numSubQuantizers, int nbitsSubQuantizer, faiss::gpu::GpuIndexIMIPQConfig &config) {
+  return new faiss::gpu::GpuIndexIMIPQv2(&res, d, coarseCodebookSize, numSubQuantizers,
+    nbitsSubQuantizer, config);
+}
+
+template <>
+faiss::gpu::GpuIndexIVFPQ * getIndex(faiss::gpu::StandardGpuResources &res, int d,
+  int coarseCodebookSize, int numSubQuantizers, int nbitsSubQuantizer, faiss::gpu::GpuIndexIVFPQConfig &config) {
+  return new faiss::gpu::GpuIndexIVFPQ(&res, d, coarseCodebookSize, numSubQuantizers,
+    nbitsSubQuantizer, faiss::METRIC_L2, config);
+}
+
+template <class ConfigT>
+faiss::gpu::GpuMultipleClonerOptions getMultiGpuConfig(ConfigT &res, int useShards, int
+  verbose);
+
+template <>
+faiss::gpu::GpuMultipleClonerOptions getMultiGpuConfig(faiss::gpu::GpuIndexIMIPQConfig &config,
+  int useShards, int verbose) {
+  faiss::gpu::GpuMultipleClonerOptions options;
+  options.memorySpace = config.memorySpace;
+  options.indicesOptions = config.indicesOptions;
+  options.usePrecomputed = config.usePrecomputedTables;
+  options.precomputeCodesOnCpu = config.precomputeCodesOnCpu;
+  options.forcePinnedMemory = config.forcePinnedMemory;
+  options.shard = useShards;
+  options.shard_type = 1;
+  options.verbose = verbose;
+  return options;
+}
+
+template <>
+faiss::gpu::GpuMultipleClonerOptions getMultiGpuConfig(faiss::gpu::GpuIndexIVFPQConfig &config,
+  int useShards, int verbose) {
+  faiss::gpu::GpuMultipleClonerOptions options;
+  options.memorySpace = config.memorySpace;
+  options.indicesOptions = config.indicesOptions;
+  options.usePrecomputed = config.usePrecomputedTables;
+  options.precomputeCodesOnCpu = config.precomputeCodesOnCpu;
+  options.shard = useShards;
+  options.shard_type = 1;
+  options.verbose = verbose;
+  return options;
+}
+
+template <class ConfigT, class IndexT>
 void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuantizers,
                 int nbitsSubQuantizer, std::string fileNameTraining,
                 size_t numTrainingVecs, std::string fileNameIndexing,
@@ -588,7 +675,8 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
                 int nprobeEnd, int kBegin, int kEnd, int ngpus, bool useShards, 
                 int nProcesses, int processRank, bool sharedGpuProcess, bool shardPerProcess,
                 size_t safeMemMargin, std::string fileNameCoarseQuantizer,
-                std::string fileNameIndex, bool profile, bool allocLogging, bool verbose, int nRuns, int pinnedMemoryMode) {
+                std::string fileNameIndex, bool profile, bool allocLogging, bool verbose, int nRuns, 
+                int pinnedMemoryMode, int usePrecomputed, int useGpu) {
   
   CUDA_VERIFY(cudaProfilerStop());
   
@@ -657,9 +745,9 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
   size_t imiStructureMemSize = calcImiStructureMemSize(
       d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer);
   
-  auto allocSizePerTypeMap = faiss::gpu::GpuIndexIMIPQv2::getInvListsAllocSizePerTypeInfo(
+  auto allocSizePerTypeMap = IndexT::getInvListsAllocSizePerTypeInfo(
         numIndexingVecs, numSubQuantizers, nbitsSubQuantizer, false, indiceOptions);
-  auto allocSizePerTypeMapPerGpu = faiss::gpu::GpuIndexIMIPQv2::getInvListsAllocSizePerTypeInfo(
+  auto allocSizePerTypeMapPerGpu = IndexT::getInvListsAllocSizePerTypeInfo(
         numIndexingVecsPerGpu, numSubQuantizers, nbitsSubQuantizer, false, indiceOptions);
 
   size_t fixedMemSize = calcFixedMemSize(allocSizePerTypeMap);
@@ -698,22 +786,12 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
   numVecsTile = std::min(numVecsTile, (size_t)10000);
   numVecsTile = std::max(numVecsTile, (size_t)1);
 
-  faiss::gpu::GpuIndexIMIPQConfig config;
-
-  config.memorySpace = faiss::gpu::MemorySpace::Fixed;
-  // config.multiIndexConfig.memorySpace = faiss::gpu::MemorySpace::Fixed;
-  config.indicesOptions = indiceOptions;
-  config.usePrecomputedTables = true;
-  config.device = deviceIdInit;
-
-  if (pinnedMemoryMode == 2) {
-    config.forcePinnedMemory = true;
-  }
+  ConfigT config = getConfig<ConfigT>(indiceOptions, deviceIdInit, pinnedMemoryMode, usePrecomputed);
 
   std::vector<faiss::gpu::GpuResourcesProvider *> resVector;
   std::vector<int> devs;
-  std::unique_ptr<faiss::Index> indexMultiGpu;
-  
+  std::unique_ptr<faiss::Index> finalIndex;
+  std::unique_ptr<faiss::Index> indexCpu;
 
   { // Build Index
     bool fileNameIndexIsEmpty = fileNameIndex.empty();
@@ -729,14 +807,14 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
     std::stringstream loadIndexStart;
     loadIndexStart << "Index - loading: " << fileNameIndex;
     processPrint(processRank, loadIndexStart);
-    std::unique_ptr<faiss::Index> indexCpu(loadIndexToCpu<faiss::IndexIVFPQ>(processRank, fileNameIndex));
+    indexCpu.reset(loadIndexToCpu<faiss::IndexIVFPQ>(processRank, fileNameIndex));
     if (!indexCpu) {
       { // indexing
         faiss::gpu::StandardGpuResources res(allocSizePerTypeMap);
         res.setLogMemoryAllocations(allocLogging);
         res.setTempMemory(tempMemory);
-        std::unique_ptr<faiss::gpu::GpuIndexIMIPQv2> imipqGpu(
-          new faiss::gpu::GpuIndexIMIPQv2(&res, d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer, config));
+        std::unique_ptr<IndexT> imipqGpu(getIndex<ConfigT, IndexT>(
+          res, d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer, config));
         imipqGpu->verbose = verbose;
 
         size_t indexToAddOffset = 0;
@@ -837,20 +915,14 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
     std::stringstream loadIndexEnd;
     loadIndexEnd << "Index - built: " << fileNameIndex;
     MPI_Barrier(MPI_COMM_WORLD);
+  }
 
-    if (profile) {
+  if (profile) {
+    if (useGpu) {
       clock_t tStart, tEnd;
       double tGpu;
 
-      faiss::gpu::GpuMultipleClonerOptions options;
-      options.memorySpace = config.memorySpace;
-      options.indicesOptions = config.indicesOptions;
-      options.usePrecomputed = config.usePrecomputedTables;
-      options.precomputeCodesOnCpu = config.precomputeCodesOnCpu;
-      options.forcePinnedMemory = config.forcePinnedMemory;
-      options.shard = useShards;
-      options.shard_type = 1;
-      options.verbose = verbose;
+      faiss::gpu::GpuMultipleClonerOptions options = getMultiGpuConfig<ConfigT>(config, useShards, verbose);
       
       processPrint(processRank, "Ininting resource for multiple GPUs");
       initResourcesMultiGpu(deviceIdInit, ngpus, allocSizePerTypeMapPerGpu, tempMemoryPerGpu,
@@ -858,24 +930,22 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
 
       processPrint(processRank, "Moving index from cpu to multiple GPUs: ");
       tStart = clock();
-      indexMultiGpu.reset(faiss::gpu::index_cpu_to_gpu_multiple(resVector, devs, indexCpu.get(), &options));
+      finalIndex.reset(faiss::gpu::index_cpu_to_gpu_multiple(resVector, devs, indexCpu.get(), &options));
       faiss::gpu::synchronizeAllDevices();
       tEnd = clock();
       tGpu = (double)(tEnd - tStart) / CLOCKS_PER_SEC;
       std::stringstream indexMovedOut;
       indexMovedOut << "Index moved in " << tGpu;
       processPrint(processRank, indexMovedOut);
-    }      
-                
-  }
+      indexCpu.release();
+    } else {
+      finalIndex = std::move(indexCpu);
+    }
 
-  if (profile) {
     if (processRank == 0) {
       printAllDevicesMemory(0, ngpus);
     }
     MPI_Barrier(MPI_COMM_WORLD);
-
-    indexMultiGpu->verbose = verbose;
     
     std::vector<int> numQueriesList = {
         1,      1000,   8192,   10000,   16384,   32768,   65536,   100000,
@@ -914,16 +984,30 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
           processPrint(processRank, numProbeOut);
 
           try {
-            faiss::ThreadedIndex<faiss::Index> *threadedIndex =
+            if (useGpu) {
+              faiss::ThreadedIndex<faiss::Index> *threadedIndex =
                 dynamic_cast<faiss::ThreadedIndex<faiss::Index> *>(
-                    indexMultiGpu.get());
+                    finalIndex.get());
 
-            if (threadedIndex) {
-              // multi GPU
-              for (int k = 0; k < threadedIndex->count(); k++) {
-                faiss::gpu::GpuIndexIMIPQv2 *imipqGpu =
-                    dynamic_cast<faiss::gpu::GpuIndexIMIPQv2 *>(
-                        threadedIndex->at(k));
+              if (threadedIndex) {
+                // multi GPU
+                for (int k = 0; k < threadedIndex->count(); k++) {
+                  IndexT *imipqGpu =
+                      dynamic_cast<IndexT *>(
+                          threadedIndex->at(k));
+                  imipqGpu->setNumProbes(nprobe);
+                  imipqGpu->verbose = verbose;
+                  std::stringstream searchInfoOut;
+                  searchInfoOut << "Gpu: " << imipqGpu->getDevice()
+                            << ", maxListLength: " << imipqGpu->getMaxListLength()
+                            << ", nlist: " << imipqGpu->nlist
+                            << ", ntotal: " << imipqGpu->ntotal;
+                  processPrint(processRank, searchInfoOut);
+                }
+              } else {
+                // single GPU
+                IndexT *imipqGpu =
+                    dynamic_cast<IndexT *>(finalIndex.get());
                 imipqGpu->setNumProbes(nprobe);
                 imipqGpu->verbose = verbose;
                 std::stringstream searchInfoOut;
@@ -934,21 +1018,19 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
                 processPrint(processRank, searchInfoOut);
               }
             } else {
-              // single GPU
-              faiss::gpu::GpuIndexIMIPQv2 *imipqGpu =
-                  dynamic_cast<faiss::gpu::GpuIndexIMIPQv2 *>(indexMultiGpu.get());
-              imipqGpu->setNumProbes(nprobe);
-              imipqGpu->verbose = verbose;
+              faiss::IndexIVFPQ *ivfpqCpu =
+                    dynamic_cast<faiss::IndexIVFPQ *>(finalIndex.get());
+              ivfpqCpu->nprobe = nprobe;
+              finalIndex->verbose = verbose;
               std::stringstream searchInfoOut;
-              searchInfoOut << "Gpu: " << imipqGpu->getDevice()
-                        << ", maxListLength: " << imipqGpu->getMaxListLength()
-                        << ", nlist: " << imipqGpu->nlist
-                        << ", ntotal: " << imipqGpu->ntotal;
+                searchInfoOut << "CPU "
+                          << ", nlist: " << ivfpqCpu->nlist
+                          << ", ntotal: " << ivfpqCpu->ntotal;
               processPrint(processRank, searchInfoOut);
             }
 
             search(processRank, nProcesses, shardPerProcess, numIndexingVecs, remainingIndexingVecs,
-                   indexMultiGpu.get(), queries.get(), groundTruth.get(), numQueries, kBegin,
+                   finalIndex.get(), queries.get(), groundTruth.get(), numQueries, kBegin,
                    kEnd, dRead, nRuns);
 
           } catch (...) {
@@ -982,7 +1064,8 @@ int main(int argc, char **argv) {
   int d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer, queriesOffset,
       numQueriesBegin, numQueriesEnd, kBegin, kEnd, nprobeBegin, nprobeEnd,
       isFloat, numThreads, ngpus, useShards, sharedGpuProcess, shardPerProcess,
-      profile, allocLogging, verbose, nRuns, pinnedMemoryMode;
+      profile, allocLogging, verbose, nRuns, pinnedMemoryMode, usePrecomputed,
+      useMultiIndex, useGpu;
   size_t numTrainingVecs, numIndexingVecs;
   std::string fileNameTraining, fileNameIndexing, fileNameQueries,
       fileNameGroundTruth, fileNameCoarseQuantizer, fileNameIndex;
@@ -1019,6 +1102,9 @@ int main(int argc, char **argv) {
   verbose = argc > 29 ? std::stoi(argv[29]) : 0;
   nRuns = argc > 30 ? std::stoi(argv[30]) : 5;
   pinnedMemoryMode = argc > 31 ? std::stoi(argv[31]) : 1;
+  usePrecomputed = argc > 32 ? std::stoi(argv[32]) : 1;
+  useMultiIndex = argc > 33 ? std::stoi(argv[33]) : 1;
+  useGpu = argc > 34 ? std::stoi(argv[34]) : 1;
 
   int nProcesses, processRank;
 
@@ -1032,14 +1118,30 @@ int main(int argc, char **argv) {
 
   std::cout << std::setprecision(6) << std::fixed;
 
-  demo_imipq(isFloat, d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer,
+  if (useMultiIndex) {
+    demo_imipq<faiss::gpu::GpuIndexIMIPQConfig, faiss::gpu::GpuIndexIMIPQv2>(
+              isFloat, d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer,
               fileNameTraining, numTrainingVecs, fileNameIndexing,
               numIndexingVecs, fileNameQueries, queriesOffset,
               fileNameGroundTruth, numQueriesBegin, numQueriesEnd,
               nprobeBegin, nprobeEnd, kBegin, kEnd, ngpus, useShards, 
               nProcesses, processRank, sharedGpuProcess, shardPerProcess,
               safeMemMargin, fileNameCoarseQuantizer, fileNameIndex,
-              profile, allocLogging, verbose, nRuns, pinnedMemoryMode);
+              profile, allocLogging, verbose, nRuns, pinnedMemoryMode, 
+              usePrecomputed, useGpu);
+  } else {
+    demo_imipq<faiss::gpu::GpuIndexIVFPQConfig, faiss::gpu::GpuIndexIVFPQ>(
+              isFloat, d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer,
+              fileNameTraining, numTrainingVecs, fileNameIndexing,
+              numIndexingVecs, fileNameQueries, queriesOffset,
+              fileNameGroundTruth, numQueriesBegin, numQueriesEnd,
+              nprobeBegin, nprobeEnd, kBegin, kEnd, ngpus, useShards, 
+              nProcesses, processRank, sharedGpuProcess, shardPerProcess,
+              safeMemMargin, fileNameCoarseQuantizer, fileNameIndex,
+              profile, allocLogging, verbose, nRuns, pinnedMemoryMode, 
+              usePrecomputed, useGpu);
+  }
+  
 
   MPI_Barrier(MPI_COMM_WORLD);
   return 0;
