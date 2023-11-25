@@ -800,9 +800,12 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
     if (!shardPerProcess) {
       storedRank = 0;
     }
-    std::stringstream finaNameIndexPostfix;
-    finaNameIndexPostfix << "_rank" << storedRank << "_numVecs" << numIndexingVecs;
-    fileNameIndex.append(finaNameIndexPostfix.str());
+    
+    if (nProcesses > 1) {
+      std::stringstream finaNameIndexPostfix;
+      finaNameIndexPostfix << "_rank" << storedRank << "_numVecs" << numIndexingVecs;
+      fileNameIndex.append(finaNameIndexPostfix.str());
+    }
 
     std::stringstream loadIndexStart;
     loadIndexStart << "Index - loading: " << fileNameIndex;
