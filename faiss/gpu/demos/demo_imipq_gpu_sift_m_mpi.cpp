@@ -1083,39 +1083,106 @@ int main(int argc, char **argv) {
       fileNameGroundTruth, fileNameCoarseQuantizer, fileNameIndex;
   size_t safeMemMargin;
 
+  std::cout << "argv[1]: " << argv[1] << std::endl;
   d = std::stoi(argv[1]);
+  
+  std::cout << "argv[2]: " << argv[2] << std::endl;
   coarseCodebookSize = std::stoi(argv[2]);
+  
+  std::cout << "argv[3]: " << argv[3] << std::endl;
   numSubQuantizers = std::stoi(argv[3]);
+  
+  std::cout << "argv[4]: " << argv[4] << std::endl;
   nbitsSubQuantizer = std::stoi(argv[4]);
+  
+  std::cout << "argv[5]: " << argv[5] << std::endl;
   fileNameTraining = argv[5];
+  
+  std::cout << "argv[6]: " << argv[6] << std::endl;
   numTrainingVecs = std::stoul(argv[6]);
+  
+  std::cout << "argv[7]: " << argv[7] << std::endl;
   fileNameIndexing = argv[7];
+  
+  std::cout << "argv[8]: " << argv[8] << std::endl;
   numIndexingVecs = std::stoul(argv[8]);
+  
+  std::cout << "argv[9]: " << argv[9] << std::endl;
   fileNameQueries = argv[9];
+  
+  std::cout << "argv[10]: " << argv[10] << std::endl;
   queriesOffset = std::stoul(argv[10]);
+  
+  std::cout << "argv[11]: " << argv[11] << std::endl;
   fileNameGroundTruth = argv[11];
+  
+  std::cout << "argv[12]: " << argv[12] << std::endl;
   numQueriesBegin = std::stoi(argv[12]);
+  
+  std::cout << "argv[13]: " << argv[13] << std::endl;
   numQueriesEnd = std::stoi(argv[13]);
+  
+  std::cout << "argv[14]: " << argv[14] << std::endl;
   nprobeBegin = std::stoi(argv[14]);
+  
+  std::cout << "argv[15]: " << argv[15] << std::endl;
   nprobeEnd = std::stoi(argv[15]);
+  
+  std::cout << "argv[16]: " << argv[16] << std::endl;
   kBegin = std::stoi(argv[16]);
+  
+  std::cout << "argv[17]: " << argv[17] << std::endl;
   kEnd = std::stoi(argv[17]);
+  
+  std::cout << "argv[18]: " << argv[18] << std::endl;
   isFloat = std::stoi(argv[18]);
+  
+  std::cout << "argv[19]: " << argv[19] << std::endl;
   numThreads = argc > 19 ? std::stoi(argv[19]) : 1;
+  
+  std::cout << "argv[20]: " << argv[20] << std::endl;
   ngpus = argc > 20 ? std::stoi(argv[20]) : 2;
+  
+  std::cout << "argv[21]: " << argv[21] << std::endl;
   useShards = argc > 21 ? std::stoi(argv[21]) : 0;
+  
+  std::cout << "argv[22]: " << argv[22] << std::endl;
   sharedGpuProcess = argc > 22 ? std::stoi(argv[22]) : 0;
+  
+  std::cout << "argv[23]: " << argv[23] << std::endl;
   shardPerProcess = argc > 23 ? std::stoi(argv[23]) : 1;
+  
+  std::cout << "argv[24]: " << argv[24] << std::endl;
   safeMemMargin = argc > 24 ? std::stoul(argv[24]) : 0;
+  
+  std::cout << "argv[25]: " << argv[25] << std::endl;
   fileNameCoarseQuantizer = argc > 25 ? argv[25] : "";
+  
+  std::cout << "argv[26]: " << argv[26] << std::endl;
   fileNameIndex = argc > 26 ? argv[26] : "";
+  
+  std::cout << "argv[27]: " << argv[27] << std::endl;
   profile = argc > 27 ? std::stoi(argv[27]) : 1;
+  
+  std::cout << "argv[28]: " << argv[28] << std::endl;
   allocLogging = argc > 28 ? std::stoi(argv[28]) : 0;
+  
+  std::cout << "argv[29]: " << argv[29] << std::endl;
   verbose = argc > 29 ? std::stoi(argv[29]) : 0;
+  
+  std::cout << "argv[30]: " << argv[30] << std::endl;
   nRuns = argc > 30 ? std::stoi(argv[30]) : 5;
+  
+  std::cout << "argv[31]: " << argv[31] << std::endl;
   pinnedMemoryMode = argc > 31 ? std::stoi(argv[31]) : 1;
+  
+  std::cout << "argv[32]: " << argv[32] << std::endl;
   usePrecomputed = argc > 32 ? std::stoi(argv[32]) : 1;
+  
+  std::cout << "argv[33]: " << argv[33] << std::endl;
   useMultiIndex = argc > 33 ? std::stoi(argv[33]) : 1;
+  
+  std::cout << "argv[34]: " << argv[34] << std::endl;
   useGpu = argc > 34 ? std::stoi(argv[34]) : 1;
 
   int nProcesses, processRank;
