@@ -402,6 +402,7 @@ size_t calcImiStructureMemSize(size_t d, size_t coarseCodebookSize,
 }
 
 void initResourcesMultiGpu(
+    int processRank,
     int deviceIdInit,
     int ngpus,
     std::unordered_map<faiss::gpu::AllocType, size_t>
@@ -409,6 +410,8 @@ void initResourcesMultiGpu(
     size_t tempMemory,
     std::vector<faiss::gpu::GpuResourcesProvider *> &resVector,
     std::vector<int> &devs, bool allocLogging, int pinnedMemoryMode) {
+  std::stringstream out;
+  out << "Device List: ";
   for (int i = deviceIdInit; i < ngpus; i++) {
     faiss::gpu::StandardGpuResources *res;
     res = new faiss::gpu::StandardGpuResources(allocSizePerTypeMapPerGpu);
@@ -419,7 +422,9 @@ void initResourcesMultiGpu(
     }
     resVector.push_back(res);
     devs.push_back(i);
+    out << i << ",";
   }
+  processPrint(processRank, out);
 }
 
 void printDeviceMemory(size_t devFree, size_t devTotal, int deviceId, int processRank) {
@@ -693,7 +698,6 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
   if (sharedGpuProcess) {
     nProcessesPerGpu = nProcesses;
   } else {
-    assert(ngpus % nProcesses == 0);
     ngpus /= nProcesses;
     deviceIdInit = processRank * ngpus;
   }
@@ -717,6 +721,10 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
     deviceStatusStr << "# Devices per process: " << ngpus << std::endl;
     processPrint(processRank, deviceStatusStr);
     printAllDevicesMemory(0, ngpus);
+  }
+
+  if (!sharedGpuProcess) {
+    assert(totalGpus % nProcesses == 0);
   }
 
   assert(ngpus <= numDevices);
@@ -917,6 +925,7 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
 
     std::stringstream loadIndexEnd;
     loadIndexEnd << "Index - built: " << fileNameIndex;
+    processPrint(processRank, loadIndexEnd);
     MPI_Barrier(MPI_COMM_WORLD);
   }
 
@@ -928,19 +937,26 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
       faiss::gpu::GpuMultipleClonerOptions options = getMultiGpuConfig<ConfigT>(config, useShards, verbose);
       
       processPrint(processRank, "Ininting resource for multiple GPUs");
-      initResourcesMultiGpu(deviceIdInit, ngpus, allocSizePerTypeMapPerGpu, tempMemoryPerGpu,
+      initResourcesMultiGpu(processRank, deviceIdInit, ngpus, allocSizePerTypeMapPerGpu, tempMemoryPerGpu,
                             resVector, devs, allocLogging, pinnedMemoryMode);
 
       processPrint(processRank, "Moving index from cpu to multiple GPUs: ");
-      tStart = clock();
-      finalIndex.reset(faiss::gpu::index_cpu_to_gpu_multiple(resVector, devs, indexCpu.get(), &options));
-      faiss::gpu::synchronizeAllDevices();
-      tEnd = clock();
-      tGpu = (double)(tEnd - tStart) / CLOCKS_PER_SEC;
-      std::stringstream indexMovedOut;
-      indexMovedOut << "Index moved in " << tGpu;
-      processPrint(processRank, indexMovedOut);
-      indexCpu.release();
+      try {
+        tStart = clock();
+        finalIndex.reset(faiss::gpu::index_cpu_to_gpu_multiple(resVector, devs, indexCpu.get(), &options));
+        faiss::gpu::synchronizeAllDevices();
+        tEnd = clock();
+        tGpu = (double)(tEnd - tStart) / CLOCKS_PER_SEC;
+        std::stringstream indexMovedOut;
+        indexMovedOut << "Index moved in " << tGpu;
+        processPrint(processRank, indexMovedOut);
+        indexCpu.release();
+      } catch (const std::exception &e) {
+        std::stringstream eOut;
+        eOut << "Multi-GPU Clone exception: " << e.what() << std::endl;
+        processPrint(processRank, eOut);
+        throw;
+      }
     } else {
       faiss::IndexIVFPQ *ivfpqCpu =
                     dynamic_cast<faiss::IndexIVFPQ *>(indexCpu.get());
