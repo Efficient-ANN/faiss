@@ -164,7 +164,7 @@ void demo_ivfpq(int d, int coarseCodebookSize, int numSubQuantizers,
                 bool profile, bool allocLogging, bool verbose, int nRuns) {
   size_t devFree = 0;
   size_t devTotal = 0;
-  constexpr int maxPageSize = 2 * 1024 * 1024; // 2MB
+  constexpr int maxPageSize = 256;
 
   size_t numIndexingVecsPerGpu;
 
