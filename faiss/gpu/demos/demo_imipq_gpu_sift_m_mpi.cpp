@@ -443,7 +443,6 @@ void printDeviceMemory(int deviceId = 0, int processRank = 0) {
   faiss::gpu::setCurrentDevice(deviceId);
   CUDA_VERIFY(cudaMemGetInfo(&devFree, &devTotal));
   printDeviceMemory(devFree, devTotal, deviceId, processRank);
-  faiss::gpu::setCurrentDevice(0);
 }
 
 void printAllDevicesMemory(int deviceIdInit = 0, int ngpus = 1, int processRank = 0) {
@@ -467,10 +466,11 @@ void getAvailableMemoryPerDevice(size_t &devFree, size_t &devTotal, int deviceId
 
   devFree = 0;
   devTotal = 0;
-  for (int deviceId = deviceIdInit; deviceId < ngpus; deviceId++) {
+  int deviceId = deviceIdInit;
+  for (int i = 0; i < ngpus; i++) {
+    faiss::gpu::setCurrentDevice(deviceId);
+    CUDA_VERIFY(cudaMemGetInfo(&currDevFree, &currDevTotal));
     if (!devFreeIsSet) {
-      faiss::gpu::setCurrentDevice(deviceId);
-      CUDA_VERIFY(cudaMemGetInfo(&currDevFree, &currDevTotal));
       devFreeIsSet = true;
       devFree = currDevFree;
       devTotal = currDevTotal;
@@ -478,8 +478,8 @@ void getAvailableMemoryPerDevice(size_t &devFree, size_t &devTotal, int deviceId
       devFree = std::min(devFree, currDevFree);
       devTotal = std::min(devTotal, currDevTotal);
     }
+    deviceId++;
   }
-  faiss::gpu::setCurrentDevice(0);
   devFree /= nProcessesPerGpu;
   devTotal /= nProcessesPerGpu;
 }
@@ -719,29 +719,31 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
     deviceStatusStr << "# Devices: " << totalGpus << std::endl;
     deviceStatusStr << "# Processes: " << nProcesses << std::endl;
     deviceStatusStr << "# Devices per process: " << ngpus << std::endl;
+    deviceStatusStr << "# Processes per Gpu " << nProcessesPerGpu << std::endl;
     processPrint(processRank, deviceStatusStr);
     printAllDevicesMemory(0, ngpus);
   }
 
+  MPI_Barrier(MPI_COMM_WORLD);
+
   if (!sharedGpuProcess) {
     assert(totalGpus % nProcesses == 0);
   }
-
+  
   assert(ngpus <= numDevices);
-
-  MPI_Barrier(MPI_COMM_WORLD);
+  
   std::stringstream outDev;
   outDev << "(first device ID) " << deviceIdInit;
   processPrint(processRank, outDev);
 
   getAvailableMemoryPerDevice(devFree, devTotal, deviceIdInit, ngpus, nProcessesPerGpu);
 
-  // Let's ensure the memory isn't change
+  // Let's ensure the memory isn't changed
   MPI_Barrier(MPI_COMM_WORLD);
 
   size_t numIndexingVecsPerGpu;
   if (useShards) {
-    numIndexingVecsPerGpu = numIndexingVecs / ngpus + numIndexingVecs % ngpus;
+    numIndexingVecsPerGpu = numIndexingVecs / ngpus;
   } else {
     numIndexingVecsPerGpu = numIndexingVecs;
   }
@@ -774,9 +776,10 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
   memoryInfoStr1 << "devFreeLimit: " << devFreeLimit << std::endl;
   processPrint(processRank, memoryInfoStr1);
 
-
   assert(devFreeLimit >= fixedMemSize + imiStructureMemSize);
   assert(devFreeLimit >= fixedMemSizePerGpu + imiStructureMemSize);
+
+  MPI_Barrier(MPI_COMM_WORLD);
 
   size_t tempMemory = roundMemAllocDown(devFreeLimit - fixedMemSize - imiStructureMemSize);
   size_t tempMemoryPerGpu = roundMemAllocDown(devFreeLimit - fixedMemSizePerGpu - imiStructureMemSize);
@@ -852,7 +855,6 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
           processPrint(processRank, readStart);
 
           std::unique_ptr<faiss::IndexIVFPQ> indexCpuTrainedOnly(loadIndexToCpu<faiss::IndexIVFPQ>(processRank, fileNameCoarseQuantizer));
-          assert(indexCpuTrainedOnly);
           imipqGpu->copyFrom(indexCpuTrainedOnly.get());
           readEnd << "Coarse quantizer - loaded";
           processPrint(processRank, readEnd);
