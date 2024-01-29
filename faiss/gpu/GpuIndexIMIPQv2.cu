@@ -139,6 +139,7 @@ void GpuIndexIMIPQv2::applyExpectedNumAddsPerList() {
     for (auto &expectedNumAdds : *expectedNumAddsPerList) {
       numExpectedVecs += expectedNumAdds.second;
     }
+    DeviceScope scope(config_.device);
     index_->reserveMemory(expectedNumAddsPerList.get(), numExpectedVecs);
   }
 }

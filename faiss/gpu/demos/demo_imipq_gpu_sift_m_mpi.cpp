@@ -902,6 +902,11 @@ void demo(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuantizers,
 
         reserveIndexingSpace(processRank, imipqGpu.get(), isVecFloat, fileNameIndexing, numIndexingVecs, d, numVecsTile, randomContext, indexToAddOffset);
 
+        std::stringstream reserved;
+        reserved << "space reserved"<< std::endl;
+  
+        processPrint(processRank, reserved);
+
         // save it for assertion
         endSeed = randomContext.seed;
 
