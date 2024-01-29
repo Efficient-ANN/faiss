@@ -426,7 +426,8 @@ void initResourcesMultiGpu(
     std::vector<int> &devs, bool allocLogging, int pinnedMemoryMode) {
   std::stringstream out;
   out << "Device List: ";
-  for (int i = deviceIdInit; i < ngpus; i++) {
+  int currDevice = deviceIdInit;
+  for (int i = 0; i < ngpus; i++) {
     faiss::gpu::StandardGpuResources *res;
     res = new faiss::gpu::StandardGpuResources(allocSizePerTypeMapPerGpu);
     res->setLogMemoryAllocations(allocLogging);
@@ -435,8 +436,9 @@ void initResourcesMultiGpu(
       res->setPinnedMemory(0);
     }
     resVector.push_back(res);
-    devs.push_back(i);
-    out << i << ",";
+    devs.push_back(currDevice);
+    out << currDevice << ",";
+    currDevice++;
   }
   processPrint(processRank, out);
 }
