@@ -39,6 +39,13 @@
 
 #include <cuda_profiler_api.h>
 
+void synchronizeDevices(int deviceIdInit, int nGpus) {
+  for (int i = deviceIdInit; i < nGpus; ++i) {
+    faiss::gpu::DeviceScope scope(i);
+    CUDA_VERIFY(cudaDeviceSynchronize());
+  }
+}
+
 void processPrint(int processRank, std::string str) {
   std::stringstream out;
   out << "Process " << processRank << " << " <<  str << std::endl;
@@ -111,7 +118,8 @@ merge_tables(long n, long k, int nProcesses,
   }
 }
 
-void search(int processRank, int nProcesses, bool shardPerProcess, int numIndexingVecs, int remainingIndexingVecs,
+void search(int processRank, int totalGpus, bool useGpu, 
+            int nProcesses, bool shardPerProcess, int numIndexingVecs, int remainingIndexingVecs,
             const faiss::Index *index, float *queries, int *groundTruth,
             size_t numQueries, int kBegin, int kEnd, int groundTruthK, int nRuns, bool verbose = false) {
   std::vector<int> kList = {1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048};
@@ -175,7 +183,9 @@ void search(int processRank, int nProcesses, bool shardPerProcess, int numIndexi
         index->search(numQueries, queries, k, outDistances.data(),
                       outLabels.data());
 
-        faiss::gpu::synchronizeAllDevices();
+        if (useGpu) {
+          synchronizeDevices(0, totalGpus);
+        }
 
         tEnd = clock();
         tGpu += (double)(tEnd - tStart) / CLOCKS_PER_SEC;
@@ -327,7 +337,9 @@ void search(int processRank, int nProcesses, bool shardPerProcess, int numIndexi
     } catch (const std::exception &e) {
       std::stringstream eOut;
       MPI_Barrier(MPI_COMM_WORLD);
-      faiss::gpu::synchronizeAllDevices();
+      if (useGpu) {
+        synchronizeDevices(0, totalGpus);
+      }
       eOut << "K EXCEPTION: " << e.what() << std::endl;
       processPrint(processRank, eOut);
       if (i == 0 || i == kBegin) {
@@ -335,7 +347,9 @@ void search(int processRank, int nProcesses, bool shardPerProcess, int numIndexi
       }
     } catch (...) {
       MPI_Barrier(MPI_COMM_WORLD);
-      faiss::gpu::synchronizeAllDevices();
+      if (useGpu) {
+        synchronizeDevices(0, totalGpus);
+      }
       processPrint(processRank, "K UNKNOWN EXCEPTION");
       if (i == 0 || i == kBegin) {
         throw;
@@ -440,23 +454,19 @@ void printDeviceMemory(size_t devFree, size_t devTotal, int deviceId, int proces
 void printDeviceMemory(int deviceId = 0, int processRank = 0) {
   size_t devFree = 0;
   size_t devTotal = 0;
-  faiss::gpu::setCurrentDevice(deviceId);
+  faiss::gpu::DeviceScope scope(deviceId);
   CUDA_VERIFY(cudaMemGetInfo(&devFree, &devTotal));
   printDeviceMemory(devFree, devTotal, deviceId, processRank);
 }
 
-void printAllDevicesMemory(int deviceIdInit = 0, int ngpus = 1, int processRank = 0) {
+void printAllDevicesMemory(bool print, int deviceIdInit = 0, int ngpus = 1, int processRank = 0) {
+  if (!print) {
+    return;
+  }
   std::stringstream out;
   for (int deviceId = deviceIdInit; deviceId < ngpus; deviceId++) {
-    size_t devFree, devTotal;
-    CUDA_VERIFY(cudaMemGetInfo(&devFree, &devTotal));
-    out << std::endl;
-    out << "-------Memory-------" << std::endl;
-    out << "Device: " << deviceId << std::endl;
-    out << "Free: " << devFree << std::endl;
-    out << "Total: " << devTotal << std::endl;
+    printDeviceMemory(deviceId, processRank);
   }
-  processPrint(processRank, out);
 }
 
 void getAvailableMemoryPerDevice(size_t &devFree, size_t &devTotal, int deviceIdInit = 0, int ngpus = 1, int nProcessesPerGpu = 1) {
@@ -468,7 +478,7 @@ void getAvailableMemoryPerDevice(size_t &devFree, size_t &devTotal, int deviceId
   devTotal = 0;
   int deviceId = deviceIdInit;
   for (int i = 0; i < ngpus; i++) {
-    faiss::gpu::setCurrentDevice(deviceId);
+    faiss::gpu::DeviceScope scope(i);
     CUDA_VERIFY(cudaMemGetInfo(&currDevFree, &currDevTotal));
     if (!devFreeIsSet) {
       devFreeIsSet = true;
@@ -671,7 +681,7 @@ faiss::gpu::GpuMultipleClonerOptions getMultiGpuConfig(faiss::gpu::GpuIndexIVFPQ
 }
 
 template <class ConfigT, class IndexT>
-void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuantizers,
+void demo(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuantizers,
                 int nbitsSubQuantizer, std::string fileNameTraining,
                 size_t numTrainingVecs, std::string fileNameIndexing,
                 size_t numIndexingVecs, std::string fileNameQueries,
@@ -681,9 +691,11 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
                 int nProcesses, int processRank, bool sharedGpuProcess, bool shardPerProcess,
                 size_t safeMemMargin, std::string fileNameCoarseQuantizer,
                 std::string fileNameIndex, bool profile, bool allocLogging, bool verbose, int nRuns, 
-                int pinnedMemoryMode, int usePrecomputed, int useMultiIndex, int useGpu) {
+                int pinnedMemoryMode, int usePrecomputed, int useMultiIndex, int useGpu, bool printGpuMemory) {
   
-  CUDA_VERIFY(cudaProfilerStop());
+  if (useGpu) {
+    CUDA_VERIFY(cudaProfilerStop());
+  }
   
   RandomContext randomContext;
   
@@ -721,7 +733,7 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
     deviceStatusStr << "# Devices per process: " << ngpus << std::endl;
     deviceStatusStr << "# Processes per Gpu " << nProcessesPerGpu << std::endl;
     processPrint(processRank, deviceStatusStr);
-    printAllDevicesMemory(0, ngpus);
+    printAllDevicesMemory(printGpuMemory, 0, ngpus);
   }
 
   MPI_Barrier(MPI_COMM_WORLD);
@@ -799,6 +811,8 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
 
   ConfigT config = getConfig<ConfigT>(indiceOptions, deviceIdInit, pinnedMemoryMode, usePrecomputed);
 
+  std::cout << "config.device: " << config.device << std::endl;
+
   std::vector<faiss::gpu::GpuResourcesProvider *> resVector;
   std::vector<int> devs;
   std::unique_ptr<faiss::Index> finalIndex;
@@ -869,7 +883,7 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
         }
 
         if (processRank == 0) {
-          printAllDevicesMemory(0, ngpus);
+          printAllDevicesMemory(printGpuMemory, 0, ngpus);
         }
 
         MPI_Barrier(MPI_COMM_WORLD);
@@ -892,7 +906,7 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
         endSeed = randomContext.seed;
 
         if (processRank == 0) {
-          printAllDevicesMemory(0, ngpus);
+          printAllDevicesMemory(printGpuMemory, 0, ngpus);
         }
 
         MPI_Barrier(MPI_COMM_WORLD);
@@ -904,7 +918,7 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
         assert(randomContext.seed == endSeed);
 
         if (processRank == 0) {
-          printAllDevicesMemory(0, ngpus);
+          printAllDevicesMemory(printGpuMemory, 0, ngpus);
         }
 
         MPI_Barrier(MPI_COMM_WORLD);
@@ -946,7 +960,9 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
       try {
         tStart = clock();
         finalIndex.reset(faiss::gpu::index_cpu_to_gpu_multiple(resVector, devs, indexCpu.get(), &options));
-        faiss::gpu::synchronizeAllDevices();
+        if (useGpu) {
+          synchronizeDevices(0, totalGpus);
+        }
         tEnd = clock();
         tGpu = (double)(tEnd - tStart) / CLOCKS_PER_SEC;
         std::stringstream indexMovedOut;
@@ -973,7 +989,7 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
     }
 
     if (processRank == 0) {
-      printAllDevicesMemory(0, ngpus);
+      printAllDevicesMemory(printGpuMemory, 0, ngpus);
     }
     MPI_Barrier(MPI_COMM_WORLD);
     
@@ -994,8 +1010,10 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
       groundTruth.reset(faiss::ivecs_read(fileNameGroundTruth.c_str(), numQueriesList[numQueriesEnd - 1], 0, &dRead));
     }
 
-    CUDA_VERIFY(cudaProfilerStart());
-    faiss::gpu::synchronizeAllDevices();
+    if (useGpu) {
+      CUDA_VERIFY(cudaProfilerStart());
+      synchronizeDevices(0, totalGpus);
+    }
 
     for (int i = numQueriesBegin > 0 ? numQueriesBegin : 0; i < numQueriesEnd;
          i++) {
@@ -1059,7 +1077,7 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
               processPrint(processRank, searchInfoOut);
             }
 
-            search(processRank, nProcesses, shardPerProcess, numIndexingVecs, remainingIndexingVecs,
+            search(processRank, totalGpus, useGpu, nProcesses, shardPerProcess, numIndexingVecs, remainingIndexingVecs,
                    finalIndex.get(), queries.get(), groundTruth.get(), numQueries, kBegin,
                    kEnd, dRead, nRuns);
 
@@ -1077,7 +1095,9 @@ void demo_imipq(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuanti
       }
     }
 
-    CUDA_VERIFY(cudaProfilerStop());
+    if (useGpu) {
+      CUDA_VERIFY(cudaProfilerStop());
+    }
     
     for (int i = 0; i < resVector.size(); i++) {
       delete resVector[i];
@@ -1095,7 +1115,7 @@ int main(int argc, char **argv) {
       numQueriesBegin, numQueriesEnd, kBegin, kEnd, nprobeBegin, nprobeEnd,
       isFloat, numThreads, ngpus, useShards, sharedGpuProcess, shardPerProcess,
       profile, allocLogging, verbose, nRuns, pinnedMemoryMode, usePrecomputed,
-      useMultiIndex, useGpu;
+      useMultiIndex, useGpu, printGpuMemory;
   size_t numTrainingVecs, numIndexingVecs;
   std::string fileNameTraining, fileNameIndexing, fileNameQueries,
       fileNameGroundTruth, fileNameCoarseQuantizer, fileNameIndex;
@@ -1203,6 +1223,9 @@ int main(int argc, char **argv) {
   std::cout << "argv[34]: " << argv[34] << std::endl;
   useGpu = argc > 34 ? std::stoi(argv[34]) : 1;
 
+  std::cout << "argv[35]: " << argv[35] << std::endl;
+  printGpuMemory = argc > 35 ? std::stoi(argv[35]) : 1;
+
   int nProcesses, processRank;
 
   MPI_Init(&argc, &argv);
@@ -1216,7 +1239,7 @@ int main(int argc, char **argv) {
   std::cout << std::setprecision(6) << std::fixed;
 
   if (useMultiIndex) {
-    demo_imipq<faiss::gpu::GpuIndexIMIPQConfig, faiss::gpu::GpuIndexIMIPQv2>(
+    demo<faiss::gpu::GpuIndexIMIPQConfig, faiss::gpu::GpuIndexIMIPQv2>(
               isFloat, d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer,
               fileNameTraining, numTrainingVecs, fileNameIndexing,
               numIndexingVecs, fileNameQueries, queriesOffset,
@@ -1225,9 +1248,9 @@ int main(int argc, char **argv) {
               nProcesses, processRank, sharedGpuProcess, shardPerProcess,
               safeMemMargin, fileNameCoarseQuantizer, fileNameIndex,
               profile, allocLogging, verbose, nRuns, pinnedMemoryMode, 
-              usePrecomputed, useMultiIndex, useGpu);
+              usePrecomputed, useMultiIndex, useGpu, printGpuMemory);
   } else {
-    demo_imipq<faiss::gpu::GpuIndexIVFPQConfig, faiss::gpu::GpuIndexIVFPQ>(
+    demo<faiss::gpu::GpuIndexIVFPQConfig, faiss::gpu::GpuIndexIVFPQ>(
               isFloat, d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer,
               fileNameTraining, numTrainingVecs, fileNameIndexing,
               numIndexingVecs, fileNameQueries, queriesOffset,
@@ -1236,7 +1259,7 @@ int main(int argc, char **argv) {
               nProcesses, processRank, sharedGpuProcess, shardPerProcess,
               safeMemMargin, fileNameCoarseQuantizer, fileNameIndex,
               profile, allocLogging, verbose, nRuns, pinnedMemoryMode, 
-              usePrecomputed, useMultiIndex, useGpu);
+              usePrecomputed, useMultiIndex, useGpu, printGpuMemory);
   }
   
 
