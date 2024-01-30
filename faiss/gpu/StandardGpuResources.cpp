@@ -365,11 +365,13 @@ void StandardGpuResourcesImpl::initializeForDevice(int device) {
 }
 
 cublasHandle_t StandardGpuResourcesImpl::getBlasHandle(int device) {
+  std::cout << "MYGPU: getBlasHandle" << device << std::endl;
   initializeForDevice(device);
   return blasHandles_[device];
 }
 
 cudaStream_t StandardGpuResourcesImpl::getDefaultStream(int device) {
+  std::cout << "MYGPU: getDefaultStream" << device << std::endl;
   initializeForDevice(device);
 
   auto it = userDefaultStreams_.find(device);
@@ -384,6 +386,7 @@ cudaStream_t StandardGpuResourcesImpl::getDefaultStream(int device) {
 
 std::vector<cudaStream_t>
 StandardGpuResourcesImpl::getAlternateStreams(int device) {
+  std::cout << "MYGPU: getAlternateStreams" << device << std::endl;
   initializeForDevice(device);
   return alternateStreams_[device];
 }
@@ -393,11 +396,13 @@ std::pair<void *, size_t> StandardGpuResourcesImpl::getPinnedMemory() {
 }
 
 cudaStream_t StandardGpuResourcesImpl::getAsyncCopyStream(int device) {
+  std::cout << "MYGPU: getAsyncCopyStream" << device << std::endl;
   initializeForDevice(device);
   return asyncCopyStreams_[device];
 }
 
 void *StandardGpuResourcesImpl::allocMemory(const AllocRequest &req) {
+   std::cout << "MYGPU: allocMemory" << device << std::endl;
   initializeForDevice(req.device);
 
   // We don't allocate a placeholder for zero-sized allocations
