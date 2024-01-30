@@ -402,7 +402,7 @@ cudaStream_t StandardGpuResourcesImpl::getAsyncCopyStream(int device) {
 }
 
 void *StandardGpuResourcesImpl::allocMemory(const AllocRequest &req) {
-   std::cout << "MYGPU: allocMemory" << device << std::endl;
+   std::cout << "MYGPU: allocMemory" << req.device << std::endl;
   initializeForDevice(req.device);
 
   // We don't allocate a placeholder for zero-sized allocations
