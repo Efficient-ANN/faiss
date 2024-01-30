@@ -12,6 +12,7 @@
 #include <faiss/impl/FaissAssert.h>
 #include <algorithm>
 #include <sstream>
+#include <iostream>
 
 namespace faiss { namespace gpu {
 
@@ -48,7 +49,7 @@ StackDeviceMemory::Stack::Stack(GpuResources* res, int d, size_t sz)
                           MemorySpace::Device,
                           res_->getDefaultStream(device_),
                           allocSize_);
-
+  std::cout << "Allocating Stack: " << device_ << ", " << allocSize_ << std::endl;
   alloc_ = (char*) res_->allocMemory(req);
   FAISS_ASSERT_FMT(
     alloc_,

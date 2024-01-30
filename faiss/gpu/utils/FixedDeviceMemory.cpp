@@ -10,6 +10,7 @@
 #include <faiss/gpu/utils/StaticUtils.h>
 #include <faiss/impl/FaissAssert.h>
 #include <sstream>
+#include <iostream>
 
 namespace faiss {
 namespace gpu {
@@ -36,6 +37,7 @@ FixedDeviceMemory::FixedDeviceMemory(GpuResources *res, int device,
   auto req =
       AllocRequest(AllocType::Other, device_, space, defaultStream, allocSize_);
 
+  std::cout << "Allocating Fixed: " << device_ << ", " << allocSize_ << std::endl;
   alloc_ = (char *)res_->allocMemory(req);
   FAISS_ASSERT_FMT(alloc_, "could not reserve fixed memory region of size %zu",
                    allocSize_);
