@@ -127,7 +127,7 @@ void GpuIndexIVFPQ::applyExpectedNumAddsPerList() {
     for (auto &expectedNumAdds : *expectedNumAddsPerList) {
       numExpectedVecs += expectedNumAdds.second;
     }
-    std::cout << "numExpectedVecs" << numExpectedVecs << std::endl;
+    DeviceScope scope(config_.device);
     index_->reserveMemory(expectedNumAddsPerList.get());
   }
 }
