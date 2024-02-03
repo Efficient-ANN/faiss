@@ -33,6 +33,7 @@
 #include <omp.h>
 #include <string>
 #include <sstream>
+#include <typeinfo>
 #include <sys/types.h>
 #include <omp.h>
 #include <mpi.h>
@@ -385,6 +386,17 @@ float *vecs_load(bool isVecFloat, std::string fileName, size_t num, int d, Rando
   return vecs;
 }
 
+template <class TVec>
+TVec *vecs_replicate(TVec *vecs, size_t size, int numReplicas) {
+  TVec *replacaVecs = new TVec[size * numReplicas];
+  for (size_t i = 0; i < numReplicas; i++) {
+      for (size_t j = 0; j < size; j++) {
+          replacaVecs[j + i * size] = vecs[j];
+      }
+  }
+  return replacaVecs;
+}
+
 size_t roundMemAllocUp(size_t size) {
     return faiss::gpu::utils::roundUp(size, (size_t)256);
 }
@@ -402,9 +414,13 @@ size_t calcFixedMemSize(std::unordered_map<faiss::gpu::AllocType, size_t> allocS
     return fixedMemSize;
 }
 
-size_t calcImiStructureMemSize(size_t d, size_t coarseCodebookSize,
-                               size_t numSubQuantizers,
-                               size_t nbitsSubQuantizer) {
+template <class IndexT>
+size_t calcStructureMemSize(size_t d, size_t coarseCodebookSize,size_t numSubQuantizers,
+size_t nbitsSubQuantizer);
+
+template <>
+size_t calcStructureMemSize<faiss::gpu::GpuIndexIMIPQv2>(
+    size_t d, size_t coarseCodebookSize, size_t numSubQuantizers, size_t nbitsSubQuantizer) {
   size_t subCodebookSize = 1 << nbitsSubQuantizer;
   size_t coarseQuantizerMemSize = roundMemAllocUp(d * coarseCodebookSize * sizeof(float));
   size_t normMemSize = roundMemAllocUp(2 * coarseCodebookSize * sizeof(float));
@@ -413,6 +429,22 @@ size_t calcImiStructureMemSize(size_t d, size_t coarseCodebookSize,
   size_t listOffsetMemSize = roundMemAllocUp(coarseCodebookSize * coarseCodebookSize * sizeof(unsigned int));
   return subCodebookSize + coarseQuantizerMemSize + normMemSize +
          productQuantizerMemSize + precomputedMemSize + listOffsetMemSize;
+}
+
+template <>
+size_t calcStructureMemSize<faiss::gpu::GpuIndexIVFPQ>(
+    size_t d, size_t coarseCodebookSize, size_t numSubQuantizers, size_t nbitsSubQuantizer) {
+  size_t subCodebookSize = 1 << nbitsSubQuantizer;
+  size_t coarseQuantizerMemSize = roundMemAllocUp(d * coarseCodebookSize * sizeof(float));
+  size_t normMemSize = roundMemAllocUp(coarseCodebookSize * sizeof(float));
+  size_t productQuantizerMemSize = 2 * roundMemAllocUp(d * subCodebookSize * sizeof(float));
+  size_t precomputedMemSize = roundMemAllocUp(coarseCodebookSize * subCodebookSize * numSubQuantizers * sizeof(float));
+  size_t codesPointersMemSize = roundMemAllocUp(coarseCodebookSize * sizeof(void *));
+  size_t idsPointersMemSize = roundMemAllocUp(coarseCodebookSize * sizeof(void *));
+  size_t listsLengthsMemSize = roundMemAllocUp(coarseCodebookSize * sizeof(int));
+  return subCodebookSize + coarseQuantizerMemSize + normMemSize +
+         productQuantizerMemSize + precomputedMemSize + codesPointersMemSize +
+         idsPointersMemSize + listsLengthsMemSize;
 }
 
 void initResourcesMultiGpu(
@@ -693,7 +725,8 @@ void demo(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuantizers,
                 int nProcesses, int processRank, bool sharedGpuProcess, bool shardPerProcess,
                 size_t safeMemMargin, std::string fileNameCoarseQuantizer,
                 std::string fileNameIndex, bool profile, bool allocLogging, bool verbose, int nRuns, 
-                int pinnedMemoryMode, int usePrecomputed, int useMultiIndex, int useGpu, bool printGpuMemory) {
+                int pinnedMemoryMode, int usePrecomputed, int useMultiIndex, int useGpu, bool printGpuMemory, 
+                int numQueryReplicas) {
   
   if (useGpu) {
     CUDA_VERIFY(cudaProfilerStop());
@@ -766,7 +799,7 @@ void demo(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuantizers,
 
   size_t devFreeLimit = std::min(devFree, safeMemMargin);
 
-  size_t imiStructureMemSize = calcImiStructureMemSize(
+  size_t imiStructureMemSize = calcStructureMemSize<IndexT>(
       d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer);
   
   auto allocSizePerTypeMap = IndexT::getInvListsAllocSizePerTypeInfo(
@@ -805,7 +838,7 @@ void demo(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuantizers,
   processPrint(processRank, memoryInfoStr2);
 
   // set maximum available memory for tiling over vectors while adding them to the GPU
-  size_t maxAddTileSize = (size_t)8 * 1024 * 1024 * 1024;
+  size_t maxAddTileSize = (size_t)4 * 1024 * 1024 * 1024;
   size_t numVecsTile = maxAddTileSize / (d * sizeof(float));
   numVecsTile = std::min(numVecsTile, numIndexingVecs);
   numVecsTile = std::min(numVecsTile, (size_t)10000);
@@ -814,6 +847,7 @@ void demo(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuantizers,
   ConfigT config = getConfig<ConfigT>(indiceOptions, deviceIdInit, pinnedMemoryMode, usePrecomputed);
 
   std::cout << "config.device: " << config.device << std::endl;
+  std::cout << "config.usePrecomputedTables: " << config.usePrecomputedTables << std::endl;
 
   std::vector<faiss::gpu::GpuResourcesProvider *> resVector;
   std::vector<int> devs;
@@ -935,7 +969,10 @@ void demo(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuantizers,
         cloneEnd.cpuWaitOnEvent();
       }
       
+
+      std::cout <<  "UHA" << std::endl;
       if (!fileNameIndexIsEmpty) {
+        std::cout <<  "OPA" << std::endl;
         if (shardPerProcess || processRank == 0)  {
           std::stringstream writeIndexStart;
           writeIndexStart << "writing: " << fileNameIndex << "...";
@@ -943,6 +980,7 @@ void demo(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuantizers,
           faiss::write_index(indexCpu.get(), fileNameIndex.c_str());
           processPrint(processRank, "done");
         }
+        std::cout <<  "HEY" << std::endl;
       }
     }
 
@@ -1008,13 +1046,22 @@ void demo(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuantizers,
         1,    2,    4,    8,    16,   32,   64,   128,  256,   512,   1024,
         2048, 2194, 2352, 2521, 2702, 2896, 4096, 8192, 16384, 32768, 65536};
 
-    std::unique_ptr<float> queries(vecs_load(isVecFloat, fileNameQueries, (size_t)numQueriesList[numQueriesEnd - 1], d, randomContext, queriesOffset));
-
+    std::unique_ptr<float> queries;
     std::unique_ptr<int> groundTruth;
     int dRead;
 
+    size_t numQueriesSearch = (size_t)numQueriesList[numQueriesEnd - 1]; 
+
+    queries.reset(vecs_load(isVecFloat, fileNameQueries, numQueriesSearch, d, randomContext, queriesOffset));
+    if (numQueryReplicas > 1) {
+      queries.reset(vecs_replicate<float>(queries.get(), numQueriesSearch * d, numQueryReplicas));
+    }
+
     if (!fileNameGroundTruth.empty()) {
-      groundTruth.reset(faiss::ivecs_read(fileNameGroundTruth.c_str(), numQueriesList[numQueriesEnd - 1], 0, &dRead));
+      groundTruth.reset(faiss::ivecs_read(fileNameGroundTruth.c_str(), numQueriesSearch, 0, &dRead));
+      if (numQueryReplicas > 1) {
+        groundTruth.reset(vecs_replicate<int>(groundTruth.get(), numQueriesSearch * dRead, numQueryReplicas));
+      }
     }
 
     if (useGpu) {
@@ -1063,6 +1110,8 @@ void demo(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuantizers,
                 // single GPU
                 IndexT *imipqGpu =
                     dynamic_cast<IndexT *>(finalIndex.get());
+                std::cout << "typeid: " << typeid(finalIndex.get()).name() << std::endl;
+                assert(imipqGpu);
                 imipqGpu->setNumProbes(nprobe);
                 imipqGpu->verbose = verbose;
                 std::stringstream searchInfoOut;
@@ -1122,7 +1171,7 @@ int main(int argc, char **argv) {
       numQueriesBegin, numQueriesEnd, kBegin, kEnd, nprobeBegin, nprobeEnd,
       isFloat, numThreads, ngpus, useShards, sharedGpuProcess, shardPerProcess,
       profile, allocLogging, verbose, nRuns, pinnedMemoryMode, usePrecomputed,
-      useMultiIndex, useGpu, printGpuMemory;
+      useMultiIndex, useGpu, printGpuMemory, numQueryReplicas;
   size_t numTrainingVecs, numIndexingVecs;
   std::string fileNameTraining, fileNameIndexing, fileNameQueries,
       fileNameGroundTruth, fileNameCoarseQuantizer, fileNameIndex;
@@ -1233,6 +1282,9 @@ int main(int argc, char **argv) {
   std::cout << "argv[35]: " << argv[35] << std::endl;
   printGpuMemory = argc > 35 ? std::stoi(argv[35]) : 1;
 
+  std::cout << "argv[36]: " << argv[36] << std::endl;
+  numQueryReplicas = argc > 36 ? std::stoi(argv[36]) : 0;
+
   int nProcesses, processRank;
 
   MPI_Init(&argc, &argv);
@@ -1255,7 +1307,7 @@ int main(int argc, char **argv) {
               nProcesses, processRank, sharedGpuProcess, shardPerProcess,
               safeMemMargin, fileNameCoarseQuantizer, fileNameIndex,
               profile, allocLogging, verbose, nRuns, pinnedMemoryMode, 
-              usePrecomputed, useMultiIndex, useGpu, printGpuMemory);
+              usePrecomputed, useMultiIndex, useGpu, printGpuMemory, numQueryReplicas);
   } else {
     demo<faiss::gpu::GpuIndexIVFPQConfig, faiss::gpu::GpuIndexIVFPQ>(
               isFloat, d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer,
@@ -1266,7 +1318,7 @@ int main(int argc, char **argv) {
               nProcesses, processRank, sharedGpuProcess, shardPerProcess,
               safeMemMargin, fileNameCoarseQuantizer, fileNameIndex,
               profile, allocLogging, verbose, nRuns, pinnedMemoryMode, 
-              usePrecomputed, useMultiIndex, useGpu, printGpuMemory);
+              usePrecomputed, useMultiIndex, useGpu, printGpuMemory, numQueryReplicas);
   }
   
 
