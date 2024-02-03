@@ -29,10 +29,10 @@ TVec *vecs_read(const char *fileName, size_t num, size_t numOffset, int *dim) {
   size_t fileSize = st.st_size;
   size_t rowSize = currentDimension * sizeof(TLoad) + sizeof(int);
   fseek(f, numOffset * rowSize, SEEK_SET);
-  FAISS_THROW_IF_NOT_FMT(fileSize % rowSize == 0, "weird file size: %zu, %zu",
+  FAISS_THROW_IF_NOT_FMT(fileSize % rowSize == 0, "%s - weird file size: %zu, %zu", fileName,
                          fileSize, rowSize);
   FAISS_THROW_IF_NOT_FMT(num <= fileSize / rowSize - numOffset,
-                         "invalid number of vectors: %zu, %zu, %zu, %zu", num,
+                         "%s - invalid number of vectors: %zu, %zu, %zu, %zu", fileName, num,
                          fileSize, rowSize, numOffset);
 
   TVec *vecs = new TVec[num * currentDimension];
