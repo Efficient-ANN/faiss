@@ -17,8 +17,6 @@
 #include <iostream>
 #include <limits>
 #include <memory>
-#include <ctime>
-#include <list>
 
 namespace faiss {
 namespace gpu {
@@ -311,11 +309,6 @@ void GpuIndexIMI::search(Index::idx_t n, const float *x, Index::idx_t k,
                          "GPU index only supports k <= %d (requested %d)",
                          getMaxKSelection(),
                          (int)k); // select limitation
-  std::cout << "GPU: " << this->getDevice() << ", search() start" << std::endl;
-
-  clock_t tStart, tEnd;
-
-  tStart = clock();
 
   if (n == 0 || k == 0) {
     // nothing to search
@@ -324,8 +317,6 @@ void GpuIndexIMI::search(Index::idx_t n, const float *x, Index::idx_t k,
 
   DeviceScope scope(imiConfig_.device);
   auto stream = resources_->getDefaultStream(imiConfig_.device);
-
-  std::cout << "GPU DEVICE: " << imiConfig_.device << ", " << getCurrentDevice() << std::endl;
 
   // We guarantee that the searchImpl_ will be called with device-resident
   // pointers.
@@ -354,55 +345,29 @@ void GpuIndexIMI::search(Index::idx_t n, const float *x, Index::idx_t k,
     size_t dataSize = (size_t)n * this->d * sizeof(float);
 
     if (dataSize >= minPagedSize_ || imiConfig_.forcePinnedMemory) {
-      std::cout << "GPU: " << this->getDevice() << ", search() call searchFromCpuPaged_()" << std::endl;
       searchFromCpuPaged_(n, x, k, outDistances.data(), outLabels.data());
       usePaged = true;
     }
   }
 
   if (!usePaged) {
-    std::cout << "GPU: " << this->getDevice() << ", search() call searchNonPaged_()" << std::endl;
     searchNonPaged_(n, x, k, outDistances.data(), outLabels.data());
   }
-
-  tEnd = clock();
-
-  std::cout << "GPU: " << this->getDevice() << ", search() before fromDevice time:" << ((double)(tEnd - tStart) / CLOCKS_PER_SEC) 
-    << ", " << (double)(tEnd - 0) / CLOCKS_PER_SEC << std::endl;
 
   // Copy back if necessary
   fromDevice<float, 2>(outDistances, distances, stream);
   fromDevice<faiss::Index::idx_t, 2>(outLabels, labels, stream);
-
-  tEnd = clock();
-  std::cout << "GPU: " << this->getDevice() << ", search() end:" << ((double)(tEnd - tStart) / CLOCKS_PER_SEC) 
-    << ", " << (double)(tEnd - 0) / CLOCKS_PER_SEC << std::endl;
 }
 
 void GpuIndexIMI::searchNonPaged_(int n, const float *x, int k,
                                   float *outDistancesData,
                                   Index::idx_t *outIndicesData) const {
-  clock_t tStart, tEnd;
-  tStart = clock();
-  std::cout << "GPU: " << this->getDevice() << " searchNonPaged_() start: " << (double)(tStart - 0) / CLOCKS_PER_SEC << std::endl;
-
   auto stream = resources_->getDefaultStream(imiConfig_.device);
-
-  std::cout << "GPU: " << this->getDevice() << " imiConfig_.device: " << imiConfig_.device << std::endl;
-  // std::cout << "GPU: " << this->getDevice() << " defaultStream Id: " << getStreamId(stream) << std::endl;
-
-  tStart = clock();
 
   float *subQueries = new float[n * this->d];
   ScopeDeleter<float> delSubQueries(subQueries);
   fvec_split(subQueries, quantizer->getNumCodebooks(), x, (size_t)n,
              quantizer->getSubDim());
-  
-  tEnd = clock();
-  std::cout << "GPU: " << this->getDevice() << ", searchNonPaged_() fvec_split time:" << ((double)(tEnd - tStart) / CLOCKS_PER_SEC) 
-    << ", " << (double)(tEnd - 0) / CLOCKS_PER_SEC << std::endl;
-  
-  CudaEvent startEvent(stream, true);
 
   // Make sure arguments are on the device we desire; use temporary
   // memory allocations to move it if necessary
@@ -410,39 +375,13 @@ void GpuIndexIMI::searchNonPaged_(int n, const float *x, int k,
       resources_.get(), imiConfig_.device, const_cast<float *>(subQueries),
       stream, {quantizer->getNumCodebooks() * n, quantizer->getSubDim()});
 
-  CudaEvent copyEnd(stream, true);
-
-  std::cout << "GPU: " << this->getDevice() << ", searchNonPaged_() searchImpl_ start" << std::endl;
-
-  tStart = clock();  
-
   searchImpl_(n, vecs.data(), k, outDistancesData, outIndicesData);
-
-  tEnd = clock();
-  std::cout << "GPU: " << this->getDevice() << ", searchNonPaged_() searchImpl_ time before wait:" << ((double)(tEnd - tStart) / CLOCKS_PER_SEC) 
-    << ", " << (double)(tEnd - 0) / CLOCKS_PER_SEC << std::endl;
 
   CudaEvent searchEnd(stream, true);
 
   // synchronizing to ensure that subQueries has not been deleted
   // copyEnd.cpuWaitOnEvent();
   searchEnd.cpuWaitOnEvent();
-
-  float eventTimeMillis = 0;
-
-  cudaEventElapsedTime(&eventTimeMillis, startEvent.get(), copyEnd.get());
-  std::cout << "GPU: " << this->getDevice() << ", searchNonPaged_() copy event time millis: " << eventTimeMillis << std::endl;
-
-  cudaEventElapsedTime(&eventTimeMillis, copyEnd.get(), searchEnd.get());
-  std::cout << "GPU: " << this->getDevice() << ", searchNonPaged_() seatch event time millis: " << eventTimeMillis << std::endl;
-
-  cudaEventElapsedTime(&eventTimeMillis, startEvent.get(), searchEnd.get());
-  std::cout << "GPU: " << this->getDevice() << ", searchNonPaged_() total event time millis: " << eventTimeMillis << std::endl;
-
-
-  tEnd = clock();
-  std::cout << "GPU: " << this->getDevice() << ", searchNonPaged_() end time: " << ((double)(tEnd - tStart) / CLOCKS_PER_SEC) 
-    << ", " << (double)(tEnd - 0) / CLOCKS_PER_SEC << std::endl;
 }
 
 void GpuIndexIMI::searchFromCpuPaged_(int n, const float *x, int k,
@@ -457,16 +396,12 @@ void GpuIndexIMI::searchFromCpuPaged_(int n, const float *x, int k,
       (int)((pinnedAlloc.second / 2) / (sizeof(float) * this->d));
 
   if (!pinnedAlloc.first || pageSizeInVecs < 1) {
-    std::cout << "GPU: " << this->getDevice() << ", searchFromCpuPaged_() nonPinned" << std::endl;
     // Just page without overlapping copy with compute
     int batchSize = utils::nextHighestPowerOf2(
         (int)((size_t)kNonPinnedPageSize / (sizeof(float) * this->d)));
     
-    std::cout << "GPU: " << this->getDevice() << ", searchFromCpuPaged_() number of batches:" << n / batchSize << std::endl;
-    std::cout << "GPU: " << this->getDevice() << ", searchFromCpuPaged_() batchSize:" << batchSize << std::endl;
 
     for (int cur = 0; cur < n; cur += batchSize) {
-      std::cout << "GPU: " << this->getDevice() << ", searchFromCpuPaged_() curr batch:" << cur << std::endl;
       int num = std::min(batchSize, n - cur);
 
       auto outDistancesSlice = outDistances.narrowOutermost(cur, num);
@@ -477,9 +412,6 @@ void GpuIndexIMI::searchFromCpuPaged_(int n, const float *x, int k,
     }
     return;
   }
-
-  std::cout << "GPU: " << this->getDevice() << ", searchFromCpuPaged_() pinned" << std::endl;
-  std::cout << "GPU: " << this->getDevice() << ", searchFromCpuPaged_() num pages: " << (int) (n / pageSizeInVecs) + (n % pageSizeInVecs) << std::endl;
 
   //
   // Pinned memory is available, so we can overlap copy with compute.
@@ -498,22 +430,12 @@ void GpuIndexIMI::searchFromCpuPaged_(int n, const float *x, int k,
   auto defaultStream = resources_->getDefaultStream(imiConfig_.device);
   auto copyStream = resources_->getAsyncCopyStream(imiConfig_.device);
 
-  // std::cout << "GPU: " << this->getDevice() << " defaultStream id : " << getStreamId(defaultStream) << std::endl;
-  // std::cout << "GPU: " << this->getDevice() << " copyStream id: " << getStreamId(copyStream) << std::endl;
-
   FAISS_ASSERT((size_t)pageSizeInVecs * this->d <=
                (size_t)std::numeric_limits<int>::max());
 
   float *bufPinnedA = (float *)pinnedAlloc.first;
   float *bufPinnedB = bufPinnedA + (size_t)pageSizeInVecs * this->d;
   float *bufPinned[2] = {bufPinnedA, bufPinnedB};
-
-  clock_t tStart, tEnd;
-
-  tStart = clock();
-  std::cout << "GPU: " << this->getDevice() << " searchFromCpuPaged_() pinned start: " << (double)(tStart - 0) / CLOCKS_PER_SEC << std::endl;
-
-  CudaEvent startEvent(defaultStream, true);
 
   // Reserve space on the GPU for the destination of the pinned buffer
   // copy
@@ -524,8 +446,6 @@ void GpuIndexIMI::searchFromCpuPaged_(int n, const float *x, int k,
       resources_.get(), makeTempAlloc(AllocType::Other, defaultStream),
       {quantizer->getNumCodebooks() * pageSizeInVecs, quantizer->getSubDim()});
   DeviceTensor<float, 2, true> *bufGpus[2] = {&bufGpuA, &bufGpuB};
-
-  CudaEvent bufferCreateEvent(defaultStream, true);
 
   // Copy completion events for the pinned buffers
   std::unique_ptr<CudaEvent> eventPinnedCopyDone[2];
@@ -548,8 +468,6 @@ void GpuIndexIMI::searchFromCpuPaged_(int n, const float *x, int k,
   int cur3 = -1;
   int cur3BufIndex = 0;
 
-  std::list<std::unique_ptr<CudaEvent>> cudaEvents;
-
   while (cur3 < n) {
     // Start async pinned -> GPU copy first (buf 2)
     if (cur2 != -1 && cur2 < n) {
@@ -569,7 +487,6 @@ void GpuIndexIMI::searchFromCpuPaged_(int n, const float *x, int k,
 
       // Mark a completion event in this stream
       eventPinnedCopyDone[cur2BufIndex].reset(new CudaEvent(copyStream));
-      cudaEvents.push_back(std::unique_ptr<CudaEvent>(new CudaEvent(copyStream, true)));
 
       // We pick up from here
       cur3 = cur2;
@@ -598,7 +515,6 @@ void GpuIndexIMI::searchFromCpuPaged_(int n, const float *x, int k,
 
       // Create completion event
       eventGpuExecuteDone[cur3BufIndex].reset(new CudaEvent(defaultStream));
-      cudaEvents.push_back(std::unique_ptr<CudaEvent>(new CudaEvent(defaultStream, true)));
 
       // We pick up from here
       cur3BufIndex = (cur3BufIndex == 0) ? 1 : 0;
@@ -615,38 +531,15 @@ void GpuIndexIMI::searchFromCpuPaged_(int n, const float *x, int k,
         eventPrev->cpuWaitOnEvent();
       }
 
-      tStart = clock();
-      std::cout << "GPU: " << this->getDevice() << ", searchFromCpuPaged_() fvec_split start: " 
-        << (double)(tStart - 0) / CLOCKS_PER_SEC << std::endl;
-
       fvec_split(bufPinned[cur1BufIndex], quantizer->getNumCodebooks(),
                  x + (size_t)cur1 * this->d, (size_t)numToCopy,
                  quantizer->getSubDim());
-
-      tEnd = clock();
-      std::cout << "GPU: " << this->getDevice() << ", searchFromCpuPaged_() fvec_split time: " << ((double)(tEnd - tStart) / CLOCKS_PER_SEC) 
-        << ", " << (double)(tEnd - 0) / CLOCKS_PER_SEC << std::endl;
 
       // We pick up from here
       cur2 = cur1;
       cur1 += numToCopy;
       cur1BufIndex = (cur1BufIndex == 0) ? 1 : 0;
     }
-  }
-
-  float eventTimeMillis = 0;
-
-  cudaEvents.back()->cpuWaitOnEvent();
-
-  cudaEventElapsedTime(&eventTimeMillis, startEvent.get(), bufferCreateEvent.get());
-  std::cout << "GPU: " << this->getDevice() << ", searchFromCpuPaged_() bufferCreateEvent event time millis: " << eventTimeMillis << std::endl;
-
-  std::cout << "GPU: " << this->getDevice() << ", num events: " << cudaEvents.size() << std::endl;
-  int i = 0;
-  for(auto&& currCudaEvent : cudaEvents) {
-    cudaEventElapsedTime(&eventTimeMillis, startEvent.get(), currCudaEvent->get());
-    std::cout << "GPU: " << this->getDevice() << ", event id: " << i << ", event time time from start millis: " << eventTimeMillis << std::endl;
-    i++;
   }
 }
 
