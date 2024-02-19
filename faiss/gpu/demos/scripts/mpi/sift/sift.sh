@@ -17,7 +17,7 @@ BIGANN_DIR=${BASE_DIR}/sift1bi
 FAISS_DIR=/petrobr/parceirosbr/petrobrasiageo/willian.barreiros/git/a/faiss_imipq
 DEMO_DIR=${FAISS_DIR}/build/faiss/gpu/demos
 RESULT_DIR=${FAISS_DIR}/demo_out
-PROF_SCRIPT_DIR=${FAISS_DIR}/faiss/gpu/demos/scripts/mpi/prof
+PROF_SCRIPT_DIR=${FAISS_DIR}/faiss/gpu/demos/scripts/mpi/sift
 
 N_THREADS=48
 USE_SHARD=1

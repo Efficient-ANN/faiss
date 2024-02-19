@@ -13,7 +13,7 @@ module load /scratch/app/modulos/sequana/current openmpi/gnu/4.0.1_sequana
 set -x
 
 FAISS_DIR=/petrobr/parceirosbr/petrobrasiageo/willian.barreiros/git/a/faiss_imipq
-PROF_SCRIPT_DIR=${FAISS_DIR}/faiss/gpu/demos/scripts/
+PROF_SCRIPT_DIR=${FAISS_DIR}/faiss/gpu/demos/scripts/mpi
 
-${PROF_SCRIPT_DIR}/sift/gist.sh
+${PROF_SCRIPT_DIR}/gist/gist.sh
 ${PROF_SCRIPT_DIR}/sift/sift.sh
