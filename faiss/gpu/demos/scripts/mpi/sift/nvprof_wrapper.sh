@@ -13,4 +13,4 @@ do
     i=$((i+1))
 done
 
-nvprof --print-gpu-trace -o $1.$OMPI_COMM_WORLD_RANK.nvprof ${argList[@]+"${argList[@]}"}
+nvprof --print-gpu-trace -f -o $1.$OMPI_COMM_WORLD_RANK.nvprof ${argList[@]+"${argList[@]}"}
