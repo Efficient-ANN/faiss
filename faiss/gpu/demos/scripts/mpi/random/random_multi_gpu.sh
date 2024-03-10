@@ -16,7 +16,7 @@ FAISS_DIR=/petrobr/parceirosbr/petrobrasiageo/willian.barreiros/git/a/faiss_imip
 
 DEMO_DIR=${FAISS_DIR}/build/faiss/gpu/demos
 RESULT_DIR=${FAISS_DIR}/demo_out
-RANDOM_DIR=${FAISS_DIR}/faiss/gpu/demos/scripts/mpi/gist
+RANDOM_DIR=${FAISS_DIR}/faiss/gpu/demos/scripts/mpi/random
 PROF_SCRIPT_DIR=${FAISS_DIR}/faiss/gpu/demos/scripts/mpi/sift
 
 # MAX_MEM=3221225472
@@ -25,10 +25,10 @@ N_THREADS=8
 USE_GPU=1
 USE_SHARD=1
 PRINT_GPU_MEM=0
-Q_INIT=10
-Q_END=11
 MAX_MEM=8589934592
 MEM_STR=8GB
+# MAX_MEM=17179869184
+# MEM_STR=16GB
 
 export DEMO_DIR
 export RESULT_DIR
@@ -50,44 +50,58 @@ export N_END
 export K_INIT
 export K_END
 export PROF_SCRIPT_DIR
+export USE_PROF
+export BASE_SIZE
+export NUM_DIMENSIONS
+export RANDOM_DIR
+export CENTROID_LIST
+export USE_NVPROF
 
 # IMIPQ
-CENTROID_LIST="500"
+
+USE_NVPROF=1
+
+# 1M
+BASE_SIZE=1000000
+NUM_DIMENSIONS=128
+CENTROID_LIST="2070"
 USE_IMI=1
 USE_PRECOMP=1
 
-N_GPUS_LIST="1 2"
-SEARCH_LIST="0 1"
+Q_INIT=10
+Q_END=11
+${RANDOM_DIR}/random_multi_gpu_run.sh
 
-N_INIT=7
-N_END=8
-K_INIT=7
-K_END=8
+Q_INIT=12
+Q_END=13
+${RANDOM_DIR}/random_multi_gpu_run.sh
 
-for N_GPUS in ${N_GPUS_LIST};
-do
-    for N_CENTROIDS in ${CENTROID_LIST};
-    do
-        for SEARCH in ${SEARCH_LIST};
-        do
-            ${RANDOM_DIR}/gist_multi_gpu_wrapper.sh
-        done
-    done
-done
+# 10M
+BASE_SIZE=10000000
+NUM_DIMENSIONS=128
+CENTROID_LIST="4282"
+USE_IMI=1
+USE_PRECOMP=1
 
+Q_INIT=10
+Q_END=11
+${RANDOM_DIR}/random_multi_gpu_run.sh
 
-N_INIT=6
-N_END=7
-K_INIT=6
-K_END=7
+Q_INIT=12
+Q_END=13
+${RANDOM_DIR}/random_multi_gpu_run.sh
 
-for N_GPUS in ${N_GPUS_LIST};
-do
-    for N_CENTROIDS in ${CENTROID_LIST};
-    do
-        for SEARCH in ${SEARCH_LIST};
-        do
-            ${RANDOM_DIR}/gist_multi_gpu_wrapper.sh
-        done
-    done
-done
+# 100M
+BASE_SIZE=100000000
+NUM_DIMENSIONS=128
+CENTROID_LIST="8320"
+USE_IMI=1
+USE_PRECOMP=1
+
+Q_INIT=10
+Q_END=11
+${RANDOM_DIR}/random_multi_gpu_run.sh
+
+Q_INIT=12
+Q_END=13
+${RANDOM_DIR}/random_multi_gpu_run.sh
