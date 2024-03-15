@@ -36,8 +36,7 @@ FixedDeviceMemory::FixedDeviceMemory(GpuResources *res, int device,
   auto defaultStream = res_->getDefaultStream(device_);
   auto req =
       AllocRequest(AllocType::Other, device_, space, defaultStream, allocSize_);
-
-  std::cout << "Allocating Fixed: " << device_ << ", " << allocSize_ << std::endl;
+  
   alloc_ = (char *)res_->allocMemory(req);
   FAISS_ASSERT_FMT(alloc_, "could not reserve fixed memory region of size %zu",
                    allocSize_);
