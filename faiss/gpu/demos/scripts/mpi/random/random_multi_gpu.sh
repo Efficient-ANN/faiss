@@ -13,8 +13,10 @@ set -x
 
 # FAISS_DIR=/home/alanp/git/faiss_imipq
 FAISS_DIR=/petrobr/parceirosbr/petrobrasiageo/willian.barreiros/git/a/faiss_imipq
+# FAISS_DIR=/home_cerberus/speed/willianjunior/git/faiss_imipq
 
 DEMO_DIR=${FAISS_DIR}/build/faiss/gpu/demos
+# DEMO_DIR=${FAISS_DIR}/faiss/gpu/demos
 RESULT_DIR=${FAISS_DIR}/demo_out
 RANDOM_DIR=${FAISS_DIR}/faiss/gpu/demos/scripts/mpi/random
 PROF_SCRIPT_DIR=${FAISS_DIR}/faiss/gpu/demos/scripts/mpi/sift
@@ -68,12 +70,8 @@ CENTROID_LIST="2059"
 USE_IMI=1
 USE_PRECOMP=1
 
-Q_INIT=10
-Q_END=11
-${RANDOM_DIR}/random_multi_gpu_run.sh
-
-Q_INIT=12
-Q_END=13
+Q_INIT=3
+Q_END=4
 ${RANDOM_DIR}/random_multi_gpu_run.sh
 
 # 10M
@@ -83,12 +81,8 @@ CENTROID_LIST="4276"
 USE_IMI=1
 USE_PRECOMP=1
 
-Q_INIT=10
-Q_END=11
-${RANDOM_DIR}/random_multi_gpu_run.sh
-
-Q_INIT=12
-Q_END=13
+Q_INIT=3
+Q_END=4
 ${RANDOM_DIR}/random_multi_gpu_run.sh
 
 # 100M
@@ -98,10 +92,6 @@ CENTROID_LIST="8316"
 USE_IMI=1
 USE_PRECOMP=1
 
-Q_INIT=10
-Q_END=11
-${RANDOM_DIR}/random_multi_gpu_run.sh
-
-Q_INIT=12
-Q_END=13
+Q_INIT=3
+Q_END=4
 ${RANDOM_DIR}/random_multi_gpu_run.sh

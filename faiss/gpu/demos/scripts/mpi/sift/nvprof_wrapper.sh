@@ -13,4 +13,10 @@ do
     i=$((i+1))
 done
 
-nvprof --print-gpu-trace -f -o $1.$OMPI_COMM_WORLD_RANK.nvprof ${argList[@]+"${argList[@]}"}
+USE_NVPROF="${USE_NVPROF:-1}"
+
+if [ $USE_NVPROF = 1 ]; then
+    nvprof --print-gpu-trace -f -o $1.$OMPI_COMM_WORLD_RANK.nvprof ${argList[@]+"${argList[@]}"}
+else
+    nsys nvprof --print-gpu-trace -f -o $1.$OMPI_COMM_WORLD_RANK.nvprof ${argList[@]+"${argList[@]}"}
+fi

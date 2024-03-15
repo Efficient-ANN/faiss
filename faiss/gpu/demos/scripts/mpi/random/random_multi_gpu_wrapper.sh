@@ -2,11 +2,10 @@
 export USE_NVPROF
 
 BASE_NAME=random
-VECS_TYPE=fvecs
 IS_FLOAT=1
 TRAIN_SIZE=$((256 * N_CENTROIDS))
 
-echo "RUNNING gist_wrapper..."
+echo "RUNNING random_wrapper..."
 echo "BASE_SIZE: $BASE_SIZE"
 echo "NUM_DIMENSIONS: $NUM_DIMENSIONS"
 echo "DEMO_DIR: $DEMO_DIR"
@@ -19,7 +18,6 @@ echo "N_GPUS: $N_GPUS"
 echo "USE_SHARD: $USE_SHARD"
 echo "USE_PRECOMP: $USE_PRECOMP"
 echo "BASE_NAME: $BASE_NAME"
-echo "BASE_SIZE: $BASE_SIZE"
 echo "VECS_TYPE: $VECS_TYPE"
 echo "IS_FLOAT: $IS_FLOAT"
 echo "N_CENTROIDS: $N_CENTROIDS"
