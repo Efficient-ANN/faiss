@@ -11,10 +11,12 @@
 # module load /scratch/app/modulos/sequana/current openmpi/gnu/4.0.1_sequana
 # set -x
 
-FAISS_DIR=/home/alanp/git/faiss_imipq
+# FAISS_DIR=/home/alanp/git/faiss_imipq
 # FAISS_DIR=/petrobr/parceirosbr/petrobrasiageo/willian.barreiros/git/a/faiss_imipq
+FAISS_DIR=/home_cerberus/speed/willianjunior/git/faiss_imipq
 
-DEMO_DIR=${FAISS_DIR}/build/faiss/gpu/demos
+# DEMO_DIR=${FAISS_DIR}/build/faiss/gpu/demos
+DEMO_DIR=${FAISS_DIR}/faiss/gpu/demos
 RESULT_DIR=${FAISS_DIR}/demo_out
 GIST_SCRIPT_DIR=${FAISS_DIR}/faiss/gpu/demos/scripts/mpi/gist
 
@@ -42,8 +44,8 @@ export N_CENTROIDS
 export SEARCH
 export PRINT_GPU_MEM
 
-IMIPQ
-CENTROID_LIST="333 419 500 746"
+# IMIPQ
+CENTROID_LIST="128 226 256 333 419 500 746 1266 2059"
 USE_IMI=1
 USE_PRECOMP=1
 for N_CENTROIDS in ${CENTROID_LIST};
@@ -54,9 +56,9 @@ do
     done
 done
 
-IVFPQ
+# IVFPQ
 USE_IMI=0
-CENTROID_LIST="500 1000"
+CENTROID_LIST="250 500 1000 2000 4000"
 for N_CENTROIDS in ${CENTROID_LIST};
 do
     USE_PRECOMP=1
