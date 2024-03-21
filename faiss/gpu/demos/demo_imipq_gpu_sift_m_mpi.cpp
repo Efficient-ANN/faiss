@@ -726,7 +726,7 @@ void demo(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuantizers,
                 size_t safeMemMargin, std::string fileNameCoarseQuantizer,
                 std::string fileNameIndex, bool profile, bool allocLogging, bool verbose, int nRuns, 
                 int pinnedMemoryMode, int usePrecomputed, int useMultiIndex, int useGpu, bool printGpuMemory, 
-                int numQueryReplicas) {
+                int numQueryReplicas, bool copyPerShard) {
   
   if (useGpu) {
     CUDA_VERIFY(cudaProfilerStop());
@@ -749,7 +749,7 @@ void demo(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuantizers,
     deviceIdInit = processRank * ngpus;
   }
 
-  if (shardPerProcess) {
+  if (shardPerProcess && !copyPerShard) {
     numIndexingVecs /= nProcesses;
     // the first process manages the remaining number of vecs
     if (processRank == 0) {
@@ -913,7 +913,11 @@ void demo(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuantizers,
           if (shardPerProcess) {
             indexToAddOffset = remainingIndexingVecs + numIndexingVecs * processRank;
           } else {
-            indexToAddOffset = 0;
+            if (copyPerShard) {
+              indexToAddOffset = numIndexingVecs * processRank;
+            } else {
+              indexToAddOffset = 0;
+            }
           }
           randomContext.seed = numTrainingVecs + indexToAddOffset;
         }
@@ -969,10 +973,7 @@ void demo(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuantizers,
         cloneEnd.cpuWaitOnEvent();
       }
       
-
-      std::cout <<  "UHA" << std::endl;
       if (!fileNameIndexIsEmpty) {
-        std::cout <<  "OPA" << std::endl;
         if (shardPerProcess || processRank == 0)  {
           std::stringstream writeIndexStart;
           writeIndexStart << "writing: " << fileNameIndex << "...";
@@ -980,7 +981,6 @@ void demo(bool isVecFloat, int d, int coarseCodebookSize, int numSubQuantizers,
           faiss::write_index(indexCpu.get(), fileNameIndex.c_str());
           processPrint(processRank, "done");
         }
-        std::cout <<  "HEY" << std::endl;
       }
     }
 
@@ -1171,7 +1171,7 @@ int main(int argc, char **argv) {
       numQueriesBegin, numQueriesEnd, kBegin, kEnd, nprobeBegin, nprobeEnd,
       isFloat, numThreads, ngpus, useShards, sharedGpuProcess, shardPerProcess,
       profile, allocLogging, verbose, nRuns, pinnedMemoryMode, usePrecomputed,
-      useMultiIndex, useGpu, printGpuMemory, numQueryReplicas;
+      useMultiIndex, useGpu, printGpuMemory, numQueryReplicas, copyPerShard;
   size_t numTrainingVecs, numIndexingVecs;
   std::string fileNameTraining, fileNameIndexing, fileNameQueries,
       fileNameGroundTruth, fileNameCoarseQuantizer, fileNameIndex;
@@ -1285,6 +1285,9 @@ int main(int argc, char **argv) {
   std::cout << "argv[36]: " << argv[36] << std::endl;
   numQueryReplicas = argc > 36 ? std::stoi(argv[36]) : 0;
 
+  std::cout << "argv[37]: " << argv[37] << std::endl;
+  copyPerShard = argc > 37 ? std::stoi(argv[37]) : 0;
+  
   int nProcesses, processRank;
 
   MPI_Init(&argc, &argv);
@@ -1307,7 +1310,7 @@ int main(int argc, char **argv) {
               nProcesses, processRank, sharedGpuProcess, shardPerProcess,
               safeMemMargin, fileNameCoarseQuantizer, fileNameIndex,
               profile, allocLogging, verbose, nRuns, pinnedMemoryMode, 
-              usePrecomputed, useMultiIndex, useGpu, printGpuMemory, numQueryReplicas);
+              usePrecomputed, useMultiIndex, useGpu, printGpuMemory, numQueryReplicas, copyPerShard);
   } else {
     demo<faiss::gpu::GpuIndexIVFPQConfig, faiss::gpu::GpuIndexIVFPQ>(
               isFloat, d, coarseCodebookSize, numSubQuantizers, nbitsSubQuantizer,
@@ -1318,7 +1321,7 @@ int main(int argc, char **argv) {
               nProcesses, processRank, sharedGpuProcess, shardPerProcess,
               safeMemMargin, fileNameCoarseQuantizer, fileNameIndex,
               profile, allocLogging, verbose, nRuns, pinnedMemoryMode, 
-              usePrecomputed, useMultiIndex, useGpu, printGpuMemory, numQueryReplicas);
+              usePrecomputed, useMultiIndex, useGpu, printGpuMemory, numQueryReplicas, copyPerShard);
   }
   
 
