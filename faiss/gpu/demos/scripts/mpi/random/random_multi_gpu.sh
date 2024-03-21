@@ -5,6 +5,8 @@
 #SBATCH --account=petrobrasiageo
 #SBATCH --exclusive         #Utilização exclusiva dos nós
 #SBATCH --job-name="a1test"
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=guns945@gmail.com
 
 module load boost/1.73_gnu cmake/3.17.3 gcc/10.2 gcc/7.4 
 module load cuda/11.0
