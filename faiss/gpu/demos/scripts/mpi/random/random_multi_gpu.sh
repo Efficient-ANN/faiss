@@ -58,10 +58,12 @@ export NUM_DIMENSIONS
 export RANDOM_DIR
 export CENTROID_LIST
 export USE_NVPROF
+export COPY_PER_SHARD
 
 # IMIPQ
 
 USE_NVPROF=1
+COPY_PER_SHARD=1
 
 # 1M
 BASE_SIZE=1000000
@@ -74,6 +76,10 @@ Q_INIT=3
 Q_END=4
 ${RANDOM_DIR}/random_multi_gpu_run.sh
 
+Q_INIT=7
+Q_END=8
+${RANDOM_DIR}/random_multi_gpu_run.sh
+
 # 10M
 BASE_SIZE=10000000
 NUM_DIMENSIONS=128
@@ -83,6 +89,9 @@ USE_PRECOMP=1
 
 Q_INIT=3
 Q_END=4
+${RANDOM_DIR}/random_multi_gpu_run.sh
+Q_INIT=7
+Q_END=8
 ${RANDOM_DIR}/random_multi_gpu_run.sh
 
 # 100M
@@ -94,4 +103,7 @@ USE_PRECOMP=1
 
 Q_INIT=3
 Q_END=4
+${RANDOM_DIR}/random_multi_gpu_run.sh
+Q_INIT=7
+Q_END=8
 ${RANDOM_DIR}/random_multi_gpu_run.sh
