@@ -8,17 +8,17 @@
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=guns945@gmail.com
 
-module load boost/1.73_gnu cmake/3.17.3 gcc/10.2 gcc/7.4 
-module load cuda/11.0
-module load /scratch/app/modulos/sequana/current openmpi/gnu/4.0.1_sequana
+#module load boost/1.73_gnu cmake/3.17.3 gcc/10.2 gcc/7.4 
+#module load cuda/11.0
+#module load /scratch/app/modulos/sequana/current openmpi/gnu/4.0.1_sequana
 set -x
 
 # FAISS_DIR=/home/alanp/git/faiss_imipq
-FAISS_DIR=/petrobr/parceirosbr/petrobrasiageo/willian.barreiros/git/a/faiss_imipq
-# FAISS_DIR=/home_cerberus/speed/willianjunior/git/faiss_imipq
+#FAISS_DIR=/petrobr/parceirosbr/petrobrasiageo/willian.barreiros/git/a/faiss_imipq
+FAISS_DIR=/home_cerberus/speed/willianjunior/git/faiss_imipq
 
-DEMO_DIR=${FAISS_DIR}/build/faiss/gpu/demos
-# DEMO_DIR=${FAISS_DIR}/faiss/gpu/demos
+#DEMO_DIR=${FAISS_DIR}/build/faiss/gpu/demos
+DEMO_DIR=${FAISS_DIR}/faiss/gpu/demos
 RESULT_DIR=${FAISS_DIR}/demo_out
 RANDOM_DIR=${FAISS_DIR}/faiss/gpu/demos/scripts/mpi/random
 PROF_SCRIPT_DIR=${FAISS_DIR}/faiss/gpu/demos/scripts/mpi/sift
@@ -64,7 +64,7 @@ export COPY_PER_SHARD
 
 # IMIPQ
 
-USE_NVPROF=1
+USE_NVPROF=0
 COPY_PER_SHARD=1
 
 # 1M
