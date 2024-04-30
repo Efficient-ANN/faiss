@@ -41,12 +41,13 @@ do
     for N_CENTROIDS in ${CENTROID_LIST};
     do
         SEARCH=0
-        ${RANDOM_DIR}/random_multi_gpu_wrapper.sh
+        #${RANDOM_DIR}/random_multi_gpu_wrapper.sh
 
         SEARCH=1
         for USE_PROF in ${USE_PROF_LIST};
         do
-            ${RANDOM_DIR}/random_multi_gpu_wrapper.sh
+            #${RANDOM_DIR}/random_multi_gpu_wrapper.sh
+	    0=0
         done
     done
 done
@@ -54,15 +55,15 @@ done
 # LOCAL MEM
 N_INIT=6
 N_END=7
-K_INIT=6
-K_END=7
+K_INIT=7
+K_END=8
 
 for N_GPUS in ${N_GPUS_LIST};
 do
     for N_CENTROIDS in ${CENTROID_LIST};
     do
         0=0
-        ${RANDOM_DIR}/random_multi_gpu_wrapper.sh
+        #${RANDOM_DIR}/random_multi_gpu_wrapper.sh
 
         SEARCH=1
         for USE_PROF in ${USE_PROF_LIST};

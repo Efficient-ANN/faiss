@@ -18,5 +18,7 @@ USE_NVPROF="${USE_NVPROF:-1}"
 if [ $USE_NVPROF = 1 ]; then
     nvprof --print-gpu-trace -f -o $1.$OMPI_COMM_WORLD_RANK.nvprof ${argList[@]+"${argList[@]}"}
 else
-    nsys nvprof --print-gpu-trace -f -o $1.$OMPI_COMM_WORLD_RANK.nvprof ${argList[@]+"${argList[@]}"}
+    /usr/local/cuda-11.8.0/bin/nsys nvprof --profile-from-start off -f -o $1.$OMPI_COMM_WORLD_RANK.nvprof ${argList[@]+"${argList[@]}"}
+    #nsys nvprof --print-gpu-trace -f -o $1.$OMPI_COMM_WORLD_RANK.nvprof ${argList[@]+"${argList[@]}"}
+
 fi

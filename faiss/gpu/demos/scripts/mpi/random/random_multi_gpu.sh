@@ -76,11 +76,11 @@ USE_PRECOMP=1
 
 Q_INIT=3
 Q_END=4
-${RANDOM_DIR}/random_multi_gpu_run.sh
+#${RANDOM_DIR}/random_multi_gpu_run.sh
 
-Q_INIT=7
-Q_END=8
-${RANDOM_DIR}/random_multi_gpu_run.sh
+#Q_INIT=9
+#Q_END=10
+#${RANDOM_DIR}/random_multi_gpu_run.sh
 
 # 10M
 BASE_SIZE=10000000
@@ -89,12 +89,12 @@ CENTROID_LIST="4276"
 USE_IMI=1
 USE_PRECOMP=1
 
-Q_INIT=3
-Q_END=4
-${RANDOM_DIR}/random_multi_gpu_run.sh
-Q_INIT=7
-Q_END=8
-${RANDOM_DIR}/random_multi_gpu_run.sh
+#Q_INIT=3
+#Q_END=4
+#${RANDOM_DIR}/random_multi_gpu_run.sh
+Q_INIT=9
+Q_END=10
+#${RANDOM_DIR}/random_multi_gpu_run.sh
 
 # 100M
 BASE_SIZE=100000000
@@ -103,9 +103,9 @@ CENTROID_LIST="8316"
 USE_IMI=1
 USE_PRECOMP=1
 
-Q_INIT=3
-Q_END=4
-${RANDOM_DIR}/random_multi_gpu_run.sh
-Q_INIT=7
-Q_END=8
+#Q_INIT=3
+#Q_END=4
+#${RANDOM_DIR}/random_multi_gpu_run.sh
+Q_INIT=9
+Q_END=10
 ${RANDOM_DIR}/random_multi_gpu_run.sh

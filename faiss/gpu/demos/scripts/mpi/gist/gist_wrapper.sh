@@ -1,6 +1,7 @@
 #!/bin/bash
 BASE_NAME=gist
-BASE_DIR=/home/alanp/Downloads/faiss
+#BASE_DIR=/home/alanp/Downloads/faiss
+BASE_DIR=/home_cerberus/speed/willianjunior/git/faiss_imipq/downloads
 # BASE_DIR=/petrobr/parceirosbr/petrobrasiageo/willian.barreiros/git/g/pqnns-multi-stream/data
 GIST_DIR=$BASE_DIR/${BASE_NAME}
 BASE_SIZE=1000000
