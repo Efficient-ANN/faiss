@@ -54,6 +54,9 @@ target_link_libraries(demo_vector_residual PRIVATE faiss CUDA::cudart)
 add_executable(demo_memory EXCLUDE_FROM_ALL demo_memory.cu)
 target_link_libraries(demo_memory PRIVATE CUDA::cudart)
 
+add_executable(demo_multi_sequence EXCLUDE_FROM_ALL demo_multi_sequence.cpp)
+target_link_libraries(demo_multi_sequence PRIVATE faiss CUDA::cudart OpenMP::OpenMP_CXX)
+
 find_package(MPI REQUIRED)
 find_package(OpenMP REQUIRED)
 add_executable(demo_imipq_gpu_sift_m_mpi EXCLUDE_FROM_ALL demo_imipq_gpu_sift_m_mpi.cpp)
