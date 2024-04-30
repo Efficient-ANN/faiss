@@ -602,7 +602,6 @@ template <typename T, typename TVec2>
 void chooseMultiSequence2Params(const int inLength, bool &useSharedMemory,
                                 int &blockSize) {
   int maxSharedMemoryPerBlock = getMaxSharedMemPerBlockCurrentDevice();
-  maxSharedMemoryPerBlock = 48 * 1024;
   int sharedMemoryPerThread =
       (sizeof(float) + sizeof(TVec2) + sizeof(T)) * inLength;
   int maxBlockSize = maxSharedMemoryPerBlock / sharedMemoryPerThread;
