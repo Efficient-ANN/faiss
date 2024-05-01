@@ -224,7 +224,7 @@ float run(int w, int numOfQueries, unsigned short numCoarseDistances, bool isGpu
     } else {
       faiss::gpu::CpuTimer timer;
     
-      #pragma omp for
+      #pragma omp parallel for
       for(unsigned i = 0; i < numOfQueries; i++){
           if(w <= numCoarseDistances){
               multiSequence<T, TVec2>(w, d1 + i * numCoarseDistances, i1 + i * numCoarseDistances,
